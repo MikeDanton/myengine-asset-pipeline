@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(myengine_asset_pipeline VERSION 1.0.0 LANGUAGES CXX C)
+project(myengine_asset_pipeline VERSION 1.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,6 +65,16 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git
 )
 FetchContent_MakeAvailable(blake3)
+
+# Optionally fetch zstd so builds are hermetic when desired. This mirrors
+# how xxHash and blake3 are fetched above and ensures `zstd` target is
+# available for linking when the system package is not present.
+FetchContent_Declare(
+  zstd
+  GIT_REPOSITORY https://github.com/facebook/zstd.git
+  GIT_TAG        v1.5.5
+)
+FetchContent_MakeAvailable(zstd)
 
 # The BLAKE3 project places its C CMake build under the `c/` subdirectory.
 # Add that subdirectory so it creates the `blake3`/`BLAKE3::blake3` target

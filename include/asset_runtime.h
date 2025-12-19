@@ -10,6 +10,7 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <span>
 
 namespace asset {
 
@@ -24,6 +25,7 @@ enum class AssetError {
     TocCorrupt,
     NotFound,
     DecompressFailed,
+    BufferTooSmall,
     HashMismatch,
 };
 
@@ -66,6 +68,16 @@ public:
     std::optional<AssetBlob> Load(AssetId id,
                                   AssetError& out_err,
                                   bool verify_content_hash = true) const;
+
+    // Load asset bytes into a caller-provided buffer `dst`.
+    // On success returns the number of bytes written (uncompressed size).
+    // On failure returns std::nullopt and sets `out_err`.
+    // If `out_info` is non-null it will be filled with metadata for the asset.
+    std::optional<std::size_t> LoadTo(AssetId id,
+                                      std::span<std::uint8_t> dst,
+                                      AssetInfo* out_info,
+                                      AssetError& out_err,
+                                      bool verify_content_hash = true) const;
 
 private:
     struct Impl;

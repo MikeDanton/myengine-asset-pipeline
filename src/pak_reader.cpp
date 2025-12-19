@@ -182,4 +182,68 @@ std::optional<AssetBlob> PakMount::Load(AssetId id, AssetError& out_err, bool ve
     return std::optional<AssetBlob>(std::move(blob));
 }
 
+std::optional<std::size_t> PakMount::LoadTo(AssetId id,
+                                           std::span<std::uint8_t> dst,
+                                           AssetInfo* out_info,
+                                           AssetError& out_err,
+                                           bool verify_content_hash) const {
+    out_err = AssetError::Ok;
+    if (!impl_) { out_err = AssetError::IoError; return std::nullopt; }
+
+    const pak::PakTocEntryWire* found = nullptr;
+    for (const auto& te : impl_->toc_entries) if (te.id == id) { found = &te; break; }
+    if (!found) { out_err = AssetError::NotFound; return std::nullopt; }
+
+    // raw_size is the uncompressed size we will write into dst
+    if (found->raw_size > static_cast<std::uint64_t>(dst.size())) {
+        out_err = AssetError::BufferTooSmall;
+        return std::nullopt;
+    }
+
+    std::ifstream is(impl_->path, std::ios::binary);
+    if (!is) { out_err = AssetError::FileOpenFailed; return std::nullopt; }
+
+    is.seekg(static_cast<std::streamoff>(found->data_offset), std::ios::beg);
+
+    if (found->compression == static_cast<uint8_t>(pak::Compression::None)) {
+        if (found->stored_size > 0) {
+            is.read(reinterpret_cast<char*>(dst.data()), static_cast<std::streamsize>(found->stored_size));
+            if (!is) { out_err = AssetError::IoError; return std::nullopt; }
+        }
+    } else if (found->compression == static_cast<uint8_t>(pak::Compression::Zstd)) {
+        // Decompress directly from file stream into the provided `dst`
+        // buffer using zstd streaming API to avoid allocating a large
+        // temporary buffer for the compressed frame.
+        size_t wrote = 0;
+        if (!asset::DecompressZstdStreamTo(is, static_cast<size_t>(found->stored_size), dst.data(), dst.size(), wrote)) {
+            out_err = AssetError::DecompressFailed; return std::nullopt;
+        }
+        if (wrote != static_cast<size_t>(found->raw_size)) {
+            out_err = AssetError::IoError; return std::nullopt;
+        }
+    } else {
+        out_err = AssetError::IoError; return std::nullopt;
+    }
+
+    // Optional content hash verify
+    if (verify_content_hash) {
+        pak::Hash128 calc = pak::ComputeHash128(dst.data(), static_cast<size_t>(found->raw_size));
+        if (!Hash128Equals(calc, found->content_hash)) {
+            out_err = AssetError::HashMismatch; return std::nullopt;
+        }
+    }
+
+    if (out_info) {
+        out_info->id = found->id;
+        out_info->type = static_cast<pak::AssetType>(found->type);
+        out_info->type_version = found->type_version;
+        out_info->flags = found->flags;
+        out_info->compression = static_cast<pak::Compression>(found->compression);
+        out_info->raw_size = found->raw_size;
+        out_info->stored_size = found->stored_size;
+    }
+
+    return static_cast<std::size_t>(found->raw_size);
+}
+
 } // namespace asset

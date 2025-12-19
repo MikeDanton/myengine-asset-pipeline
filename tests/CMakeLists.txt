@@ -51,6 +51,46 @@ if(TARGET BLAKE3::blake3)
   endif()
 endif()
 
+add_executable(pak_loadto
+  pak_loadto.cpp
+)
+
+target_include_directories(pak_loadto PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(pak_loadto PRIVATE asset_runtime)
+
+find_package(ZSTD QUIET)
+if(ZSTD_FOUND OR TARGET zstd OR TARGET libzstd OR TARGET ZSTD::ZSTD)
+  target_compile_definitions(pak_loadto PRIVATE ASSET_HAS_ZSTD=1)
+  add_test(NAME pak_loadto COMMAND pak_loadto)
+else()
+  target_compile_definitions(pak_loadto PRIVATE ASSET_HAS_ZSTD=0)
+  message(STATUS "ZSTD not found; pak_loadto will be built but zstd-specific checks are skipped at runtime")
+  add_test(NAME pak_loadto COMMAND pak_loadto)
+endif()
+
+if(TARGET BLAKE3::blake3)
+  target_link_libraries(pak_loadto PRIVATE BLAKE3::blake3)
+endif()
+
+# If clang-tidy is present, configure per-target checks for test targets to
+# suppress lower-value warnings that tend to generate noise in test code.
+find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+if(CLANG_TIDY_EXE)
+  message(STATUS "clang-tidy found for tests: ${CLANG_TIDY_EXE}; applying test-specific checks")
+  set(TEST_CLANG_TIDY_ARGS
+    "${CLANG_TIDY_EXE};-checks=clang-analyzer-*,cppcoreguidelines-*,modernize-*,performance-*,-readability-identifier-length,-modernize-use-trailing-return-type,-modernize-return-braced-init-list,-readability-braces-around-statements;-header-filter=^(include|src|tools|tests)/"
+  )
+  # Apply to common test targets if they exist
+  foreach(tgt IN ITEMS pak_roundtrip pak_roundtrip_full pak_roundtrip_zstd pak_negative_toc_corrupt pak_negative_missing_asset pak_negative_hash_mismatch pak_negative_decompress_fail pak_hash_regression pak_loadto)
+    if(TARGET ${tgt})
+      set_target_properties(${tgt} PROPERTIES CXX_CLANG_TIDY "${TEST_CLANG_TIDY_ARGS}")
+    endif()
+  endforeach()
+endif()
+
 add_executable(pak_negative_toc_corrupt
   pak_negative_toc_corrupt.cpp
 )

@@ -30,9 +30,22 @@ auto mount = asset::PakMount::Open("assets.pak", err, /*verify_toc_hash=*/true);
 if (!mount) { /* handle error via err */ }
 
 asset::AssetError load_err;
+// Convenience API that allocates and returns the bytes
 auto blob = mount->Load(someAssetId, load_err, /*verify_content_hash=*/true);
 if (blob) {
-		// use blob->bytes and blob->info
+	// use blob->bytes and blob->info
+}
+
+// Efficient API: reuse a caller-provided buffer to avoid allocations when
+// streaming many assets. `LoadTo` writes the (decompressed) asset bytes into
+// the provided `std::span<uint8_t>` and returns the number of bytes written.
+{
+	std::vector<uint8_t> buffer(expected_size);
+	AssetError out_err = AssetError::Ok;
+	auto wrote = mount->LoadTo(someAssetId, std::span<uint8_t>(buffer.data(), buffer.size()), nullptr, out_err, /*verify_content_hash=*/true);
+	if (wrote.has_value()) {
+		// buffer[0..wrote.value()) contains the asset payload
+	}
 }
 ```
 
