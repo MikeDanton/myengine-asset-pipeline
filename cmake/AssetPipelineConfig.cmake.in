@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+# Provide the imported targets created by the export
+include("${CMAKE_CURRENT_LIST_DIR}/asset_pipelineTargets.cmake")
+
+set(AssetPipeline_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+
+# Allow find_package to work for downstream projects
+if(NOT TARGET AssetPipeline::asset_runtime)
+  find_dependency(${_DEPENDENCIES})
+endif()

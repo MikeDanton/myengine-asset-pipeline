@@ -1,0 +1,40 @@
+## Build directories
+/cmake-build-debug/
+/build/
+
+## CMake generated files
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+
+## Compiled objects and libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+## Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## Test artifacts and temporary files
+/tests/*.pak
+*.log
+
+## CLion specific
+.idea/
+*.iml
+
+## Misc
+/.vs/
+/.cache/
