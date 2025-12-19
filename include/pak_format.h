@@ -50,13 +50,13 @@ struct Hash128 {
 
 // 64 bytes total.
 struct PakHeaderWire {
-    char magic[8];                 // PAK_MAGIC
-    std::uint32_t format_version;  // PAK_FORMAT_VERSION
-    std::uint32_t header_size;     // sizeof(PakHeaderWire)
+    char magic[8]{};                 // PAK_MAGIC
+    std::uint32_t format_version{};  // PAK_FORMAT_VERSION
+    std::uint32_t header_size{};     // sizeof(PakHeaderWire)
 
-    std::uint64_t toc_offset;      // byte offset to TOC array
-    std::uint32_t toc_count;       // number of entries
-    std::uint32_t toc_entry_size;  // sizeof(PakTocEntryWire)
+    std::uint64_t toc_offset{};      // byte offset to TOC array
+    std::uint32_t toc_count{};       // number of entries
+    std::uint32_t toc_entry_size{};  // sizeof(PakTocEntryWire)
 
     Hash128 toc_hash;              // hash of TOC bytes (entry array)
     std::uint8_t reserved[16]{};   // future use
@@ -65,17 +65,17 @@ static_assert(sizeof(PakHeaderWire) == 64, "PakHeaderWire must be 64 bytes");
 
 // 64 bytes total.
 struct PakTocEntryWire {
-    AssetId id;                    // hash64(canonical_key)
-    std::uint16_t type;            // AssetType
-    std::uint16_t type_version;    // version of the asset payload schema
-    std::uint32_t flags;           // TocFlags bitfield
+    AssetId id{};                    // hash64(canonical_key)
+    std::uint16_t type{};            // AssetType
+    std::uint16_t type_version{};    // version of the asset payload schema
+    std::uint32_t flags{};           // TocFlags bitfield
 
-    std::uint8_t compression;      // Compression
+    std::uint8_t compression{};      // Compression
     std::uint8_t reserved0[3]{};
 
-    std::uint64_t data_offset;     // byte offset to blob
-    std::uint64_t stored_size;     // bytes stored in file (compressed)
-    std::uint64_t raw_size;        // bytes after decompression
+    std::uint64_t data_offset{};     // byte offset to blob
+    std::uint64_t stored_size{};     // bytes stored in file (compressed)
+    std::uint64_t raw_size{};        // bytes after decompression
 
     Hash128 content_hash;          // hash of *raw* bytes (after decompression)
     std::uint8_t reserved1[4]{};   // pad to 64

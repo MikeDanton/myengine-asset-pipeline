@@ -6,10 +6,10 @@
 #include "pak_format.h"
 
 #include <cstdint>
-#include <cstddef>
 #include <string>
 #include <vector>
 #include <optional>
+#include <memory>
 
 namespace asset {
 
@@ -54,9 +54,9 @@ public:
     PakMount& operator=(PakMount&&) noexcept;
 
     // Open and parse TOC. If verify_toc_hash is true, validate toc_hash.
-    static std::optional<PakMount> Open(const std::string& path,
-                                        AssetError& out_err,
-                                        bool verify_toc_hash = true);
+    static std::unique_ptr<PakMount> Open(const std::string& path,
+                                          AssetError& out_err,
+                                          bool verify_toc_hash = true);
 
     // Lookup only (no IO beyond TOC).
     [[nodiscard]] bool Has(AssetId id) const;
@@ -70,7 +70,7 @@ public:
 private:
     struct Impl;
     Impl* impl_ = nullptr;
-    explicit PakMount(Impl*);
+    explicit PakMount(Impl* impl);
 };
 
 } // namespace asset

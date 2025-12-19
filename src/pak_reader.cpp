@@ -4,10 +4,13 @@
 #include "xxhash64.h"
 #include "hash128.h"
 #include "compression_zstd.h"
+#include "io_utils.h"
 
 #include <fstream>
 #include <cstring>
 #include <algorithm>
+#include <memory>
+#include <sstream>
 
 namespace asset {
 
@@ -24,73 +27,86 @@ static bool Hash128Equals(const pak::Hash128& a, const pak::Hash128& b) noexcept
 
 PakMount::PakMount(Impl* impl) : impl_(impl) {}
 
-PakMount::PakMount(PakMount&& o) noexcept : impl_(o.impl_) { o.impl_ = nullptr; }
-PakMount& PakMount::operator=(PakMount&& o) noexcept { if (this != &o) { delete impl_; impl_ = o.impl_; o.impl_ = nullptr; } return *this; }
+PakMount::~PakMount() {
+    delete impl_;
+    impl_ = nullptr;
+}
 
-PakMount::~PakMount() { delete impl_; impl_ = nullptr; }
+PakMount::PakMount(PakMount&& other) noexcept : impl_(other.impl_) {
+    other.impl_ = nullptr;
+}
 
-std::optional<PakMount> PakMount::Open(const std::string& path, AssetError& out_err, bool verify_toc_hash) {
+PakMount& PakMount::operator=(PakMount&& other) noexcept {
+    if (this != &other) {
+        delete impl_;
+        impl_ = other.impl_;
+        other.impl_ = nullptr;
+    }
+    return *this;
+}
+
+std::unique_ptr<PakMount> PakMount::Open(const std::string& path, AssetError& out_err, bool verify_toc_hash) {
     out_err = AssetError::Ok;
     std::ifstream is(path, std::ios::binary | std::ios::ate);
-    if (!is) {
-        out_err = AssetError::FileOpenFailed;
-        return std::nullopt;
+        if (!is) { 
+            out_err = AssetError::FileOpenFailed; 
+            return nullptr; 
     }
 
     const std::streamsize file_size = is.tellg();
     is.seekg(0, std::ios::beg);
 
     pak::PakHeaderWire hdr{};
-    is.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
-    if (!is) { out_err = AssetError::IoError; return std::nullopt; }
+    if (!asset::util::read_struct(is, hdr)) { out_err = AssetError::IoError; return nullptr; }
 
     if (std::memcmp(hdr.magic, pak::PAK_MAGIC, sizeof(pak::PAK_MAGIC)) != 0) {
         out_err = AssetError::BadMagic;
-        return std::nullopt;
+        return nullptr;
     }
 
     if (hdr.format_version != pak::PAK_FORMAT_VERSION) {
         out_err = AssetError::UnsupportedVersion;
-        return std::nullopt;
+        return nullptr;
     }
 
-    Impl* impl = new Impl();
-    impl->path = path;
-    impl->header = hdr;
-    impl->header_read = true;
+    std::unique_ptr<Impl> impl_up = std::make_unique<Impl>();
+    impl_up->path = path;
+    impl_up->header = hdr;
+    impl_up->header_read = true;
 
     // Read TOC if present
     if (hdr.toc_offset != 0 && hdr.toc_count > 0) {
         const std::uint64_t expected_toc_size = static_cast<std::uint64_t>(hdr.toc_count) * hdr.toc_entry_size;
         if (hdr.toc_offset + expected_toc_size > static_cast<std::uint64_t>(file_size)) {
-            delete impl; out_err = AssetError::TocCorrupt; return std::nullopt;
+            out_err = AssetError::TocCorrupt; return nullptr;
         }
 
         is.seekg(static_cast<std::streamoff>(hdr.toc_offset), std::ios::beg);
-        impl->toc_entries.resize(hdr.toc_count);
+        impl_up->toc_entries.resize(hdr.toc_count);
         for (std::uint32_t i = 0; i < hdr.toc_count; ++i) {
             pak::PakTocEntryWire te{};
-            is.read(reinterpret_cast<char*>(&te), sizeof(te));
-            if (!is) { delete impl; out_err = AssetError::IoError; return std::nullopt; }
-            impl->toc_entries[i] = te;
+            if (!asset::util::read_struct(is, te)) { out_err = AssetError::IoError; return nullptr; }
+            impl_up->toc_entries[i] = te;
         }
 
-        if (verify_toc_hash) {
-            // Compute hash of TOC bytes and compare
+            if (verify_toc_hash) {
+            // Compute hash of TOC bytes and compare (serialize entries)
             std::vector<uint8_t> toc_bytes;
             toc_bytes.reserve(expected_toc_size);
-            for (const auto& te : impl->toc_entries) {
-                const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&te);
-                toc_bytes.insert(toc_bytes.end(), ptr, ptr + sizeof(te));
+            for (const auto& te : impl_up->toc_entries) {
+                std::ostringstream oss;
+                asset::util::write_struct(oss, te);
+                const std::string s = oss.str();
+                toc_bytes.insert(toc_bytes.end(), s.begin(), s.end());
             }
             pak::Hash128 calc = pak::ComputeHash128(toc_bytes.data(), toc_bytes.size());
             if (!Hash128Equals(calc, hdr.toc_hash)) {
-                delete impl; out_err = AssetError::TocCorrupt; return std::nullopt;
+                out_err = AssetError::TocCorrupt; return nullptr;
             }
         }
     }
 
-    return std::optional<PakMount>(PakMount(impl));
+    return std::unique_ptr<PakMount>(new PakMount(impl_up.release()));
 }
 
 bool PakMount::Has(AssetId id) const {
@@ -132,7 +148,7 @@ std::optional<AssetBlob> PakMount::Load(AssetId id, AssetError& out_err, bool ve
     std::vector<uint8_t> stored;
     stored.resize(static_cast<size_t>(found->stored_size));
     if (found->stored_size > 0) {
-        is.read(reinterpret_cast<char*>(stored.data()), stored.size());
+            is.read(reinterpret_cast<char*>(stored.data()), static_cast<std::streamsize>(stored.size()));
         if (!is) { out_err = AssetError::IoError; return std::nullopt; }
     }
 

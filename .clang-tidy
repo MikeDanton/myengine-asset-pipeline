@@ -1,0 +1,9 @@
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-macro-parentheses
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '^(include|src|tools|tests)/'
+FormatStyle: none

@@ -10,67 +10,75 @@
 #include "asset_runtime.h"
 #include "xxhash64.h"
 
-int main() {
+auto main() -> int {
     using namespace asset;
 
     std::vector<PakWriterEntry> entries;
-    PakWriterEntry a;
-    a.canonical_key = "zstd/one";
-    a.type = pak::AssetType::RawBytes;
-    a.compression = pak::Compression::Zstd;
+    PakWriterEntry entryA;
+    entryA.canonical_key = "zstd/one";
+    entryA.type = pak::AssetType::RawBytes;
+    entryA.compression = pak::Compression::Zstd;
+    constexpr std::size_t kSizeA = 1024;
     {
-        const std::string s = std::string(1024, 'A'); // 1KB of A's compressible
-        a.bytes.assign(s.begin(), s.end());
+        const std::string strA = std::string(kSizeA, 'A'); // 1KB of A's compressible
+        entryA.bytes.assign(strA.begin(), strA.end());
     }
-    entries.push_back(a);
+    entries.push_back(entryA);
 
-    PakWriterEntry b;
-    b.canonical_key = "zstd/two";
-    b.type = pak::AssetType::RawBytes;
-    b.compression = pak::Compression::Zstd;
+    PakWriterEntry entryB;
+    entryB.canonical_key = "zstd/two";
+    entryB.type = pak::AssetType::RawBytes;
+    entryB.compression = pak::Compression::Zstd;
+    constexpr std::size_t kSizeB = 2048;
     {
-        const std::string s = std::string(2048, 'B'); // 2KB of B's
-        b.bytes.assign(s.begin(), s.end());
+        const std::string strB = std::string(kSizeB, 'B'); // 2KB of B's
+        entryB.bytes.assign(strB.begin(), strB.end());
     }
-    entries.push_back(b);
+    entries.push_back(entryB);
 
     const std::string outPath = "test_roundtrip_zstd.pak";
+    // named return codes for clarity in tests
+    constexpr int RC_WRITE_FAILED = 2;
+    constexpr int RC_LOAD_A_FAILED = 5;
+    constexpr int RC_LOAD_B_FAILED = 6;
+    constexpr int RC_SIZE_MISMATCH = 7;
+    constexpr int RC_CONTENT_MISMATCH = 8;
     auto res = WritePak(outPath, entries);
-    if (!res) { std::cerr << "WritePak failed: " << static_cast<int>(res.error) << " " << res.message << std::endl; return 2; }
+    if (!res) { std::cerr << "WritePak failed: " << static_cast<int>(res.error) << " " << res.message << '\n'; return RC_WRITE_FAILED; }
 
-    AssetError err;
-    auto mountOpt = PakMount::Open(outPath, err, true);
-    if (!mountOpt) {
-        std::cerr << "PakMount::Open failed: " << static_cast<int>(err) << std::endl;
+    AssetError err = AssetError::Ok;
+    auto mount = PakMount::Open(outPath, err, true);
+    if (!mount) {
+        std::cerr << "PakMount::Open failed: " << static_cast<int>(err) << '\n';
         return 3;
     }
-    PakMount mount = std::move(*mountOpt);
+    auto& mountRef = *mount;
 
-    auto idA = static_cast<AssetId>(XxHash64(a.canonical_key));
-    auto idB = static_cast<AssetId>(XxHash64(b.canonical_key));
+    auto idA = static_cast<AssetId>(XxHash64(entryA.canonical_key));
+    auto idB = static_cast<AssetId>(XxHash64(entryB.canonical_key));
 
-    if (!mount.Has(idA) || !mount.Has(idB)) {
-        std::cerr << "Has() failed to find entries" << std::endl;
+    if (!mountRef.Has(idA) || !mountRef.Has(idB)) {
+        std::cerr << "Has() failed to find entries" << '\n';
         return 4;
     }
 
-    AssetError loadErr;
-    auto blobAOpt = mount.Load(idA, loadErr, true);
-    if (!blobAOpt) { std::cerr << "Load A failed: " << static_cast<int>(loadErr) << std::endl; return 5; }
-    auto blobBOpt = mount.Load(idB, loadErr, true);
-    if (!blobBOpt) { std::cerr << "Load B failed: " << static_cast<int>(loadErr) << std::endl; return 6; }
+    AssetError loadErr = AssetError::Ok;
+    auto blobAOpt = mountRef.Load(idA, loadErr, true);
+    if (!blobAOpt) { std::cerr << "Load A failed: " << static_cast<int>(loadErr) << '\n'; return RC_LOAD_A_FAILED; }
+    auto blobBOpt = mountRef.Load(idB, loadErr, true);
+    if (!blobBOpt) { std::cerr << "Load B failed: " << static_cast<int>(loadErr) << '\n'; return RC_LOAD_B_FAILED; }
 
-    if (blobAOpt->bytes.size() != 1024 || blobBOpt->bytes.size() != 2048) {
-        std::cerr << "Decompressed size mismatch" << std::endl;
-        return 7;
+    if (blobAOpt->bytes.size() != kSizeA || blobBOpt->bytes.size() != kSizeB) {
+        std::cerr << "Decompressed size mismatch" << '\n';
+        return RC_SIZE_MISMATCH;
     }
 
     // quick content checks
     if (blobAOpt->bytes[0] != 'A' || blobBOpt->bytes[0] != 'B') {
-        std::cerr << "Contents mismatch after decompress" << std::endl;
-        return 8;
+        std::cerr << "Contents mismatch after decompress" << '\n';
+        return RC_CONTENT_MISMATCH;
     }
 
-    std::cout << "Zstd roundtrip test passed." << std::endl;
+    std::cout << "Zstd roundtrip test passed." << '\n';
     return 0;
 }

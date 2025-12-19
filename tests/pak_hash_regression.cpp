@@ -12,22 +12,22 @@
 
 using namespace asset;
 
-static std::string to_hex_u64(uint64_t v) {
+static auto to_hex_u64(uint64_t v) -> std::string {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0') << std::setw(16) << v;
     return oss.str();
 }
 
-static std::string to_hex_bytes(const pak::Hash128& h) {
+static auto to_hex_bytes(const pak::Hash128& h) -> std::string {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
-    for (size_t i = 0; i < sizeof(h.bytes); ++i) {
-        oss << std::setw(2) << static_cast<int>(h.bytes[i]);
+    for (unsigned char byte : h.bytes) {
+        oss << std::setw(2) << static_cast<int>(byte);
     }
     return oss.str();
 }
 
-int main() {
+auto main() -> int {
     struct Case { std::string input; std::string xxh64; std::string blake3_128; };
 
     // Prepare inputs including longer, non-ASCII and binary sequences
@@ -60,6 +60,6 @@ int main() {
         }
     }
 
-    std::cout << "Hash regression test passed." << std::endl;
+    std::cout << "Hash regression test passed." << '\n';
     return 0;
 }

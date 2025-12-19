@@ -4,6 +4,49 @@ project(myengine_asset_pipeline VERSION 0.1.0 LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Option to enable strict warnings-as-errors for supported compilers.
+option(ENABLE_WERROR "Treat warnings as errors where supported" ON)
+
+# Apply stricter warning flags globally for GCC/Clang and MSVC when enabled.
+if(ENABLE_WERROR)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)")
+    # Include conversion/sign-conversion warnings for stricter checks.
+    # Apply only for C++ compilation so third-party C code isn't affected.
+    add_compile_options(
+      $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+      $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+      $<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>
+      $<$<COMPILE_LANGUAGE:CXX>:-Werror>
+      $<$<COMPILE_LANGUAGE:CXX>:-Wconversion>
+      $<$<COMPILE_LANGUAGE:CXX>:-Wsign-conversion>
+    )
+  elseif(MSVC)
+    # /W4 is very strict; /WX turns warnings into errors on MSVC
+    add_compile_options(
+      $<$<COMPILE_LANGUAGE:CXX>:/W4>
+      $<$<COMPILE_LANGUAGE:CXX>:/WX>
+    )
+  endif()
+endif()
+
+# Optional clang-tidy integration. Disabled by default because clang-tidy can be
+# noisy and slow; enable with -DENABLE_CLANG_TIDY=ON when you want to run it.
+option(ENABLE_CLANG_TIDY "Enable clang-tidy static analysis during build" OFF)
+if(ENABLE_CLANG_TIDY)
+  find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+  if(CLANG_TIDY_EXE)
+    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}; enabling analysis")
+    # Use a conservative set of checks that are helpful for hardening.
+    # Restrict diagnostics to project headers/sources via header-filter so
+    # third-party warnings don't drown out useful diagnostics when clang-tidy
+    # runs as part of the build. Users can still override CMAKE_CXX_CLANG_TIDY
+    # manually if desired.
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-checks=clang-analyzer-*,cppcoreguidelines-*,modernize-*,performance-*,readability-*;-header-filter=^(include|src|tools|tests)/")
+  else()
+    message(WARNING "ENABLE_CLANG_TIDY requested but clang-tidy was not found on PATH")
+  endif()
+endif()
+
 option(BUILD_TESTS "Build tests" ON)
 
 include(FetchContent)

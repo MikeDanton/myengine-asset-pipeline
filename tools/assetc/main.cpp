@@ -11,6 +11,8 @@
 #include <optional>
 #include <sstream>
 #include <iomanip>
+#include <cstring>
+#include <algorithm>
 
 #include "pak_writer.h"
 #include "hash128.h"
@@ -18,30 +20,25 @@
 namespace fs = std::filesystem;
 using namespace asset;
 
-static std::string to_hex(const pak::Hash128 &h) {
+static auto to_hex(const pak::Hash128 &hash) -> std::string {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
-    for (size_t i = 0; i < sizeof(h.bytes); ++i) {
-        oss << std::setw(2) << static_cast<int>(h.bytes[i]);
+    for (unsigned char byte : hash.bytes) {
+        oss << std::setw(2) << static_cast<int>(byte);
     }
     return oss.str();
 }
 
-static std::optional<pak::Hash128> compute_hash_for_buffer(const std::vector<uint8_t> &buf) {
-    if (buf.empty()) return pak::ComputeHash128(nullptr, 0);
-    return pak::ComputeHash128(buf.data(), buf.size());
-}
-
 // Simple cache format: each line `key<TAB>hexhash`.
-static std::unordered_map<std::string, std::string> load_cache(const fs::path &p) {
+static auto load_cache(const fs::path &path) -> std::unordered_map<std::string, std::string> {
     std::unordered_map<std::string, std::string> out;
-    std::ifstream is(p);
-    if (!is) return out;
+    std::ifstream in(path);
+    if (!in) { return out; }
     std::string line;
-    while (std::getline(is, line)) {
-        if (line.empty()) continue;
+    while (std::getline(in, line)) {
+        if (line.empty()) { continue; }
         auto tab = line.find('\t');
-        if (tab == std::string::npos) continue;
+        if (tab == std::string::npos) { continue; }
         std::string key = line.substr(0, tab);
         std::string hex = line.substr(tab+1);
         out.emplace(std::move(key), std::move(hex));
@@ -49,40 +46,78 @@ static std::unordered_map<std::string, std::string> load_cache(const fs::path &p
     return out;
 }
 
-static bool write_cache(const fs::path &p, const std::unordered_map<std::string, std::string> &m) {
-    std::ofstream os(p, std::ios::trunc);
-    if (!os) return false;
-    for (const auto &kv : m) {
-        os << kv.first << '\t' << kv.second << '\n';
+static auto write_cache(const fs::path &path, const std::unordered_map<std::string, std::string> &map) -> bool {
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) { return false; }
+    for (const auto &kvp : map) {
+        out << kvp.first << '\t' << kvp.second << '\n';
     }
-    return !!os;
+    return !!out;
 }
 
-static bool read_file_bytes(const fs::path &p, std::vector<uint8_t> &out) {
-    std::ifstream is(p, std::ios::binary | std::ios::in);
-    if (!is) return false;
-    is.seekg(0, std::ios::end);
-    std::streamsize sz = is.tellg();
-    is.seekg(0, std::ios::beg);
-    out.resize(static_cast<size_t>(std::max<std::streamsize>(0, sz)));
-    if (sz > 0) is.read(reinterpret_cast<char*>(out.data()), sz);
-    return !!is || sz == 0;
+static auto read_file_bytes(const fs::path &path, std::vector<uint8_t> &out) -> bool {
+    std::ifstream in(path, std::ios::binary | std::ios::in);
+    if (!in) { return false; }
+    in.seekg(0, std::ios::end);
+    std::streamsize size = in.tellg();
+    in.seekg(0, std::ios::beg);
+    if (size <= 0) {
+        out.clear();
+        return !!in;
+    }
+    out.resize(static_cast<size_t>(size));
+    in.read(reinterpret_cast<char*>(out.data()), size);
+    return !!in;
 }
 
-static std::string canonical_key_from_path(const fs::path &root, const fs::path &file) {
+static auto canonical_key_from_path(const fs::path &root, const fs::path &file) -> std::string {
     auto rel = fs::relative(file, root);
     // Use generic_string to get forward slashes for portability
     return rel.generic_string();
 }
 
+static auto detect_asset_type(const fs::path &path) -> pak::AssetType {
+    auto ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
+        return pak::AssetType::Texture2D;
+    }
+    if (ext == ".spv") {
+        return pak::AssetType::ShaderSpirv;
+    }
+    if (ext == ".json") {
+        return pak::AssetType::Json;
+    }
+    if (ext == ".yaml" || ext == ".yml") {
+        return pak::AssetType::Yaml;
+    }
+    return pak::AssetType::RawBytes;
+}
+
 int main(int argc, char** argv) {
-    if (argc < 3) {
-        std::cout << "Usage: assetc <input_dir> <output.pak> [cachefile]\n";
+    bool useCompression = false;
+    std::vector<std::string> args;
+    if (argc > 0) {
+        args.reserve(static_cast<std::size_t>(argc));
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--compress" || arg == "-z") {
+            useCompression = true;
+        } else {
+            args.push_back(arg);
+        }
+    }
+
+    if (args.size() < 2) {
+        std::cout << "Usage: assetc <input_dir> <output.pak> [cachefile] [--compress]\n";
         return 1;
     }
-    fs::path input = argv[1];
-    fs::path outPak = argv[2];
-    fs::path cacheFile = (argc >= 4) ? fs::path(argv[3]) : fs::path(outPak.string() + ".cache");
+
+    fs::path input(args[0]);
+    fs::path outPak(args[1]);
+    fs::path cacheFile = (args.size() >= 3) ? fs::path(args[2]) : fs::path(outPak.string() + ".cache");
 
     if (!fs::exists(input) || !fs::is_directory(input)) {
         std::cerr << "input directory does not exist: " << input << "\n";
@@ -96,18 +131,23 @@ int main(int argc, char** argv) {
     std::vector<ScanItem> items;
 
     // Walk and hash
-    for (auto &it : fs::recursive_directory_iterator(input)) {
-        if (!it.is_regular_file()) continue;
-        fs::path p = it.path();
-        std::string key = canonical_key_from_path(input, p);
+    for (const auto &dirEntry : fs::recursive_directory_iterator(input)) {
+        if (!dirEntry.is_regular_file()) { continue; }
+        const auto &filePath = dirEntry.path();
+        std::string key = canonical_key_from_path(input, filePath);
         std::vector<uint8_t> buf;
-        if (!read_file_bytes(p, buf)) {
-            std::cerr << "Failed to read file: " << p << "\n";
+        if (!read_file_bytes(filePath, buf)) {
+            std::cerr << "Failed to read file: " << filePath << "\n";
             return 3;
         }
-        pak::Hash128 h = pak::ComputeHash128(buf.empty() ? nullptr : buf.data(), buf.size());
-        std::string hex = to_hex(h);
-        items.push_back(ScanItem{p, key, std::move(buf), hex});
+        pak::Hash128 hash = pak::ComputeHash128(buf.empty() ? nullptr : buf.data(), buf.size());
+        std::string hex = to_hex(hash);
+        ScanItem scanItem;
+        scanItem.path = filePath;
+        scanItem.key = key;
+        scanItem.bytes = std::move(buf);
+        scanItem.hexhash = hex;
+        items.push_back(std::move(scanItem));
         newCache.emplace(key, hex);
     }
 
@@ -120,13 +160,13 @@ int main(int argc, char** argv) {
     // Build writer entries from scanned items
     std::vector<PakWriterEntry> entries;
     entries.reserve(items.size());
-    for (auto &si : items) {
-        PakWriterEntry e;
-        e.canonical_key = si.key;
-        e.type = pak::AssetType::RawBytes;
-        e.compression = pak::Compression::None;
-        e.bytes = std::move(si.bytes);
-        entries.push_back(std::move(e));
+    for (auto &scanItem : items) {
+        PakWriterEntry entry;
+        entry.canonical_key = scanItem.key;
+        entry.type = detect_asset_type(scanItem.path);
+        entry.compression = useCompression ? pak::Compression::Zstd : pak::Compression::None;
+        entry.bytes = std::move(scanItem.bytes);
+        entries.push_back(std::move(entry));
     }
 
     std::cout << "Writing pak: " << outPak << " (" << entries.size() << " entries)\n";
@@ -141,7 +181,7 @@ int main(int argc, char** argv) {
         std::cerr << "Warning: failed to write cache file: " << cacheFile << "\n";
     }
 
-    std::cout << "Pak written successfully." << std::endl;
+    std::cout << "Pak written successfully." << '\n';
     return 0;
 }
 

@@ -5,9 +5,12 @@
 #include "hash128.h"
 #include "compression_zstd.h"
 
+#include "io_utils.h"
+
 #include <fstream>
 #include <cstring>
 #include <system_error>
+#include <sstream>
 
 namespace asset {
 
@@ -23,9 +26,8 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
     hdr.toc_offset = 0;
     hdr.toc_count = 0;
     hdr.toc_entry_size = static_cast<std::uint32_t>(pak::PakTocEntrySize());
-    std::memset(hdr.toc_hash.bytes, 0, sizeof(hdr.toc_hash.bytes));
-    os.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
-    if (!os) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write header placeholder");
+    hdr.toc_hash = {};
+    if (!asset::util::write_struct(os, hdr)) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write header placeholder");
 
     // Keep TOC entries in memory; write blobs first
     std::vector<pak::PakTocEntryWire> toc;
@@ -44,10 +46,7 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
 
         // compute content hash of raw bytes
         if (!e.bytes.empty()) {
-            pak::Hash128 hh = pak::ComputeHash128(e.bytes.data(), e.bytes.size());
-            std::memcpy(te.content_hash.bytes, hh.bytes, sizeof(hh.bytes));
-        } else {
-            std::memset(te.content_hash.bytes, 0, sizeof(te.content_hash.bytes));
+            te.content_hash = pak::ComputeHash128(e.bytes.data(), e.bytes.size());
         }
 
         // write blob (optionally compress)
@@ -59,14 +58,14 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
             te.raw_size = static_cast<std::uint64_t>(e.bytes.size());
             te.stored_size = static_cast<std::uint64_t>(compressed.size());
             if (!compressed.empty()) {
-                os.write(reinterpret_cast<const char*>(compressed.data()), compressed.size());
+                os.write(reinterpret_cast<const char*>(compressed.data()), static_cast<std::streamsize>(compressed.size()));
                 if (!os) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write compressed blob");
             }
         } else {
             te.raw_size = static_cast<std::uint64_t>(e.bytes.size());
             te.stored_size = te.raw_size;
             if (!e.bytes.empty()) {
-                os.write(reinterpret_cast<const char*>(e.bytes.data()), e.bytes.size());
+                os.write(reinterpret_cast<const char*>(e.bytes.data()), static_cast<std::streamsize>(e.bytes.size()));
                 if (!os) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write raw blob");
             }
         }
@@ -81,8 +80,10 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
     toc_bytes.reserve(toc.size() * pak::PakTocEntrySize());
 
     for (const auto& te : toc) {
-        const auto ptr = reinterpret_cast<const uint8_t*>(&te);
-        toc_bytes.insert(toc_bytes.end(), ptr, ptr + pak::PakTocEntrySize());
+        std::ostringstream oss;
+        asset::util::write_struct(oss, te);
+        const std::string s = oss.str();
+        toc_bytes.insert(toc_bytes.end(), s.begin(), s.end());
     }
 
     // compute toc hash
@@ -90,7 +91,7 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
 
     // write raw TOC bytes to file
     if (!toc_bytes.empty()) {
-        os.write(reinterpret_cast<const char*>(toc_bytes.data()), toc_bytes.size());
+        os.write(reinterpret_cast<const char*>(toc_bytes.data()), static_cast<std::streamsize>(toc_bytes.size()));
         if (!os) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write TOC bytes");
         current_offset += static_cast<std::uint64_t>(toc_bytes.size());
     }
@@ -99,12 +100,11 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
     hdr.toc_offset = toc_offset;
     hdr.toc_count = static_cast<std::uint32_t>(toc.size());
     hdr.toc_entry_size = static_cast<std::uint32_t>(pak::PakTocEntrySize());
-    std::memcpy(hdr.toc_hash.bytes, toc_hash.bytes, sizeof(hdr.toc_hash.bytes));
+    hdr.toc_hash = toc_hash;
 
     os.seekp(0, std::ios::beg);
     if (!os) return PakWriteResult::Fail(PakWriteError::SeekFailed, "failed to seek to header position");
-    os.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
-    if (!os) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write finalized header");
+    if (!asset::util::write_struct(os, hdr)) return PakWriteResult::Fail(PakWriteError::IoError, "failed to write finalized header");
 
     os.flush();
     if (!os.good()) return PakWriteResult::Fail(PakWriteError::IoError, "stream in bad state after flush");
