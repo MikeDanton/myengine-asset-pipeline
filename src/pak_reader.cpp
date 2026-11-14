@@ -11,6 +11,11 @@
 #include <algorithm>
 #include <memory>
 #include <sstream>
+#include <iostream>
+#include <cstdlib>
+#include <limits>
+#include <unordered_set>
+#include <stdexcept>
 
 namespace asset {
 
@@ -48,9 +53,9 @@ PakMount& PakMount::operator=(PakMount&& other) noexcept {
 std::unique_ptr<PakMount> PakMount::Open(const std::string& path, AssetError& out_err, bool verify_toc_hash) {
     out_err = AssetError::Ok;
     std::ifstream is(path, std::ios::binary | std::ios::ate);
-        if (!is) { 
-            out_err = AssetError::FileOpenFailed; 
-            return nullptr; 
+    if (!is) {
+        out_err = AssetError::FileOpenFailed;
+        return nullptr;
     }
 
     const std::streamsize file_size = is.tellg();
@@ -74,22 +79,53 @@ std::unique_ptr<PakMount> PakMount::Open(const std::string& path, AssetError& ou
     impl_up->header = hdr;
     impl_up->header_read = true;
 
-    // Read TOC if present
-    if (hdr.toc_offset != 0 && hdr.toc_count > 0) {
+    // Validate all sizes before allocation, arithmetic or seeking. Hash checking
+    // is optional; structural safety checks never are.
+    if (file_size < 0 || hdr.header_size != pak::PakHeaderSize() ||
+        hdr.toc_entry_size != pak::PakTocEntrySize()) {
+        out_err = AssetError::TocCorrupt; return nullptr;
+    }
+    const auto bytes = static_cast<std::uint64_t>(file_size);
+    const std::uint64_t toc_size = std::uint64_t{hdr.toc_count} * pak::PakTocEntrySize();
+    if (hdr.toc_offset < hdr.header_size || hdr.toc_offset > bytes ||
+        toc_size > bytes - hdr.toc_offset ||
+        toc_size > std::numeric_limits<std::size_t>::max()) {
+        out_err = AssetError::TocCorrupt; return nullptr;
+    }
+    {
+        std::unordered_set<AssetId> ids;
+        const bool verboseToc = []() {
+            const char* v = std::getenv("PAK_VERBOSE");
+            return v && *v && std::atoi(v) != 0;
+        }();
         const std::uint64_t expected_toc_size = static_cast<std::uint64_t>(hdr.toc_count) * hdr.toc_entry_size;
-        if (hdr.toc_offset + expected_toc_size > static_cast<std::uint64_t>(file_size)) {
-            out_err = AssetError::TocCorrupt; return nullptr;
-        }
 
         is.seekg(static_cast<std::streamoff>(hdr.toc_offset), std::ios::beg);
         impl_up->toc_entries.resize(hdr.toc_count);
         for (std::uint32_t i = 0; i < hdr.toc_count; ++i) {
             pak::PakTocEntryWire te{};
             if (!asset::util::read_struct(is, te)) { out_err = AssetError::IoError; return nullptr; }
+            const auto max_io = static_cast<std::uint64_t>(std::numeric_limits<std::streamsize>::max());
+            if (te.data_offset < hdr.header_size || te.data_offset > hdr.toc_offset ||
+                te.stored_size > hdr.toc_offset - te.data_offset ||
+                te.raw_size > std::numeric_limits<std::size_t>::max() ||
+                te.raw_size > max_io || te.stored_size > max_io ||
+                (te.compression != static_cast<uint8_t>(pak::Compression::None) &&
+                 te.compression != static_cast<uint8_t>(pak::Compression::Zstd)) ||
+                (te.compression == static_cast<uint8_t>(pak::Compression::None) &&
+                 te.raw_size != te.stored_size) || !ids.insert(te.id).second) {
+                out_err = AssetError::TocCorrupt; return nullptr;
+            }
             impl_up->toc_entries[i] = te;
+            if (verboseToc) {
+                std::cout << "[PakMount] TOC Entry: " << te.id << " (Type: " << (int)te.type << ")\n";
+            }
+        }
+        if (!verboseToc) {
+            std::cout << "[PakMount] Loaded " << hdr.toc_count << " assets from " << path << "\n";
         }
 
-            if (verify_toc_hash) {
+        if (verify_toc_hash) {
             // Compute hash of TOC bytes and compare (serialize entries)
             std::vector<uint8_t> toc_bytes;
             toc_bytes.reserve(expected_toc_size);
@@ -140,46 +176,16 @@ std::optional<AssetBlob> PakMount::Load(AssetId id, AssetError& out_err, bool ve
     for (const auto& te : impl_->toc_entries) if (te.id == id) { found = &te; break; }
     if (!found) { out_err = AssetError::NotFound; return std::nullopt; }
 
-    std::ifstream is(impl_->path, std::ios::binary);
-    if (!is) { out_err = AssetError::FileOpenFailed; return std::nullopt; }
-
-    // Read stored bytes
-    is.seekg(static_cast<std::streamoff>(found->data_offset), std::ios::beg);
-    std::vector<uint8_t> stored;
-    stored.resize(static_cast<size_t>(found->stored_size));
-    if (found->stored_size > 0) {
-            is.read(reinterpret_cast<char*>(stored.data()), static_cast<std::streamsize>(stored.size()));
-        if (!is) { out_err = AssetError::IoError; return std::nullopt; }
-    }
-
-    std::vector<uint8_t> out_bytes;
-    if (found->compression == static_cast<uint8_t>(pak::Compression::None)) {
-        out_bytes = std::move(stored);
-    } else if (found->compression == static_cast<uint8_t>(pak::Compression::Zstd)) {
-        if (!asset::DecompressZstd(stored.data(), stored.size(), out_bytes)) {
-            out_err = AssetError::DecompressFailed; return std::nullopt;
-        }
-    } else {
+    AssetBlob blob;
+    try {
+        blob.bytes.resize(static_cast<size_t>(found->raw_size));
+    } catch (const std::bad_alloc&) {
+        out_err = AssetError::IoError; return std::nullopt;
+    } catch (const std::length_error&) {
         out_err = AssetError::IoError; return std::nullopt;
     }
-
-    if (verify_content_hash) {
-        pak::Hash128 calc = pak::ComputeHash128(out_bytes.data(), out_bytes.size());
-        if (!Hash128Equals(calc, found->content_hash)) {
-            out_err = AssetError::HashMismatch; return std::nullopt;
-        }
-    }
-
-    AssetBlob blob;
-    blob.info.id = found->id;
-    blob.info.type = static_cast<pak::AssetType>(found->type);
-    blob.info.type_version = found->type_version;
-    blob.info.flags = found->flags;
-    blob.info.compression = static_cast<pak::Compression>(found->compression);
-    blob.info.raw_size = found->raw_size;
-    blob.info.stored_size = found->stored_size;
-    blob.bytes = std::move(out_bytes);
-    return std::optional<AssetBlob>(std::move(blob));
+    if (!LoadTo(id, blob.bytes, &blob.info, out_err, verify_content_hash)) return std::nullopt;
+    return blob;
 }
 
 std::optional<std::size_t> PakMount::LoadTo(AssetId id,
@@ -195,7 +201,9 @@ std::optional<std::size_t> PakMount::LoadTo(AssetId id,
     if (!found) { out_err = AssetError::NotFound; return std::nullopt; }
 
     // raw_size is the uncompressed size we will write into dst
-    if (found->raw_size > static_cast<std::uint64_t>(dst.size())) {
+    if (found->raw_size > static_cast<std::uint64_t>(dst.size()) ||
+        (found->compression == static_cast<uint8_t>(pak::Compression::None) &&
+         found->stored_size > dst.size())) {
         out_err = AssetError::BufferTooSmall;
         return std::nullopt;
     }
@@ -203,6 +211,13 @@ std::optional<std::size_t> PakMount::LoadTo(AssetId id,
     std::ifstream is(impl_->path, std::ios::binary);
     if (!is) { out_err = AssetError::FileOpenFailed; return std::nullopt; }
 
+    // The file may have been truncated/replaced after Open.
+    is.seekg(0, std::ios::end);
+    const auto end = is.tellg();
+    if (end < 0 || found->data_offset > static_cast<std::uint64_t>(end) ||
+        found->stored_size > static_cast<std::uint64_t>(end) - found->data_offset) {
+        out_err = AssetError::IoError; return std::nullopt;
+    }
     is.seekg(static_cast<std::streamoff>(found->data_offset), std::ios::beg);
 
     if (found->compression == static_cast<uint8_t>(pak::Compression::None)) {

@@ -11,10 +11,26 @@
 #include <cstring>
 #include <system_error>
 #include <sstream>
+#include <limits>
+#include <unordered_set>
 
 namespace asset {
 
 PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterEntry>& entries) {
+    if (entries.size() > std::numeric_limits<std::uint32_t>::max())
+        return PakWriteResult::Fail(PakWriteError::Unknown, "too many assets");
+    std::unordered_set<pak::AssetId> ids;
+    for (const auto& e : entries) {
+        if (!ids.insert(XxHash64(e.canonical_key)).second)
+            return PakWriteResult::Fail(PakWriteError::Unknown, "duplicate asset ID");
+        if (e.compression != pak::Compression::None && e.compression != pak::Compression::Zstd)
+            return PakWriteResult::Fail(PakWriteError::Unknown, "unsupported compression");
+        if (e.compression == pak::Compression::Zstd) {
+            std::vector<uint8_t> probe;
+            if (!CompressZstd(nullptr, 0, probe))
+                return PakWriteResult::Fail(PakWriteError::CompressUnavailable, "zstd unavailable");
+        }
+    }
     std::ofstream os(outPath, std::ios::binary);
     if (!os) return PakWriteResult::Fail(PakWriteError::FileOpenFailed, "failed to open output file");
 
@@ -45,9 +61,7 @@ PakWriteResult WritePak(const std::string& outPath, const std::vector<PakWriterE
         te.data_offset = current_offset;
 
         // compute content hash of raw bytes
-        if (!e.bytes.empty()) {
-            te.content_hash = pak::ComputeHash128(e.bytes.data(), e.bytes.size());
-        }
+        te.content_hash = pak::ComputeHash128(e.bytes.data(), e.bytes.size());
 
         // write blob (optionally compress)
         if (e.compression == pak::Compression::Zstd) {

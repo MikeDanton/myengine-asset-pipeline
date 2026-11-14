@@ -6,8 +6,7 @@
 
 namespace asset {
 
-// Stable 64-bit hash used for AssetId (placeholder implementation).
-// Replace with xxhash64 or siphash for production.
+// FNV-1a 64-bit helper. Pack AssetIds use XxHash64 instead.
 uint64_t Hash64(const std::string& s) noexcept;
 
 } // namespace asset

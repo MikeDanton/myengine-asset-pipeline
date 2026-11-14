@@ -1,9 +1,4 @@
-add_executable(assetc
-  main.cpp
-)
-
-target_include_directories(assetc PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-)
-
-target_link_libraries(assetc PRIVATE asset_runtime)
+add_executable(assetc main.cpp)
+asset_pipeline_configure_target(assetc)
+target_link_libraries(assetc PRIVATE AssetPipeline::asset_runtime BLAKE3::blake3)
+install(TARGETS assetc RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

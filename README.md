@@ -1,166 +1,100 @@
 # Asset Pack Pipeline
 
-This repository provides a small, standalone asset pipeline: a CLI tool `assetc` to create
-`.pak` files and a tiny runtime library `asset_runtime` to mount and read assets at runtime.
+Last edited: 2026-11-14. Last reviewed: 2026-11-14 (standalone and engine integration).
 
-**Goals**
-- Deterministic AssetId generation using `XxHash64` of a canonical key.
-- Content integrity using truncated BLAKE3-128 (128-bit) content hashes.
-- Optional `zstd` compression for stored blobs.
-- Simple, stable wire format for `.pak` files with clear versioning.
-- Strict developer tooling (Werror, clang-tidy) and ASan testing.
+This repository is the source of truth for `asset_runtime` and `assetc`. MyEngine2
+consumes this checkout through `add_subdirectory`; make library changes here,
+run its tests here, and commit them here. Do not maintain another source copy in
+the engine. The last published release is v1.1.0; the changes below are unreleased.
 
-**Quick usage**
+## Build and test
 
-Build and run the `assetc` tool:
+Requires CMake 3.24+, a C++20 compiler and Git. xxHash v0.8.1 and the tested BLAKE3
+revision are pinned through FetchContent. Initial configuration needs network
+access or existing `FETCHCONTENT_SOURCE_DIR_XXHASH` / `_BLAKE3` source overrides.
+System zstd development headers/library are detected automatically; no zstd
+source is downloaded. Set `ASSET_PIPELINE_WITH_ZSTD=OFF` to test without compression.
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc) --target assetc
-./build/tools/assetc/assetc [options]
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j 4
+ctest --test-dir build --output-on-failure -j 4
 ```
 
-Use the runtime API to open a pack and load an asset:
+`ENABLE_WERROR=ON` applies to project targets, without changing compiler flags in
+consumers or dependencies. `ENABLE_CLANG_TIDY=OFF` is opt-in. Standalone tests
+default on; embedded consumers enable them with `ASSET_PIPELINE_BUILD_TESTS=ON`.
+Compression-dependent coverage is registered only when zstd is enabled; the
+remaining tests include hash vectors, roundtrips, corruption and LoadTo behavior.
+
+## Pack and read
+
+```sh
+build/tools/assetc/assetc assets assets.pak
+build/tools/assetc/assetc assets assets-compressed.pak --compress
+```
+
+`--compress` requires a build with zstd support. The CLI also accepts an optional
+cache filename. [Wire format](docs/PAK_FORMAT.md) records the pack layout.
+Asset IDs use XXH64 with seed zero; content hashes use BLAKE3 truncated to 128 bits.
+The separate `Hash64` utility uses standard FNV-1a; it is not the pack ID algorithm.
 
 ```cpp
 #include "asset_runtime.h"
+#include "xxhash64.h"
 
-asset::AssetError err;
-auto mount = asset::PakMount::Open("assets.pak", err, /*verify_toc_hash=*/true);
-if (!mount) { /* handle error via err */ }
-
-asset::AssetError load_err;
-// Convenience API that allocates and returns the bytes
-auto blob = mount->Load(someAssetId, load_err, /*verify_content_hash=*/true);
-if (blob) {
-	// use blob->bytes and blob->info
-}
-
-// Efficient API: reuse a caller-provided buffer to avoid allocations when
-// streaming many assets. `LoadTo` writes the (decompressed) asset bytes into
-// the provided `std::span<uint8_t>` and returns the number of bytes written.
-{
-	std::vector<uint8_t> buffer(expected_size);
-	AssetError out_err = AssetError::Ok;
-	auto wrote = mount->LoadTo(someAssetId, std::span<uint8_t>(buffer.data(), buffer.size()), nullptr, out_err, /*verify_content_hash=*/true);
-	if (wrote.has_value()) {
-		// buffer[0..wrote.value()) contains the asset payload
-	}
+asset::AssetError error = asset::AssetError::Ok;
+auto mount = asset::PakMount::Open("assets.pak", error, true);
+if (mount) {
+    auto bytes = mount->Load(asset::XxHash64("textures/stone.png"), error, true);
+    // Check bytes/error before use. LoadTo also supports caller-owned buffers.
 }
 ```
 
-Where `PakMount::Open` returns an owning `std::unique_ptr<asset::PakMount>` (or `nullptr` on failure),
-and `Load` returns `std::optional<asset::AssetBlob>`; `AssetError` describes error cases.
+`PAK_VERBOSE=1` prints individual TOC records; the default reports a mount summary.
 
-Wire-format and detailed pack layout are described in `docs/PAK_FORMAT.md` (new).
+## Consume from CMake
 
-## Building
-
-Prerequisites
-- CMake >= 3.16
-- A C++20-capable compiler (GCC/Clang/MSVC)
-- Optional: `zstd` development headers (`libzstd-dev`) to enable compression tests and runtime compression support
-
-On Debian/Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install -y build-essential cmake libzstd-dev
-```
-
-To configure and build the project (Release):
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
-```
-
-Run tests (tests that require zstd will be skipped if system `zstd` is not available):
-
-```bash
-ctest --test-dir build --verbose
-```
-
-Install the library and headers (installs to system locations by default):
-
-```bash
-cmake --install build --prefix /usr/local
-```
-
-Consuming from another CMake project
------------------------------------
-
-After `cmake --install`, the project exports a CMake package config in
-`<prefix>/lib/cmake/asset_pipeline`, e.g.:
+For local engine/library development:
 
 ```cmake
-find_package(AssetPipeline REQUIRED)
-target_link_libraries(myexe PRIVATE AssetPipeline::asset_runtime)
+add_subdirectory(../myengine-asset-pipeline asset_pipeline)
+target_link_libraries(my_app PRIVATE AssetPipeline::asset_runtime)
 ```
 
-Development notes
-- This project vendors `xxHash` and `BLAKE3` (via CMake FetchContent) to provide deterministic
-	`XxHash64` for asset ids and BLAKE3-128 for content hashes. `zstd` is optional and uses the
-	system-provided development package when available.
+Headers and required link dependencies propagate through the target. Do not copy
+sources or add the library's include directory manually. MyEngine2 defaults to the
+sibling checkout; `MYENGINE2_ASSET_PIPELINE_SOURCE_DIR` selects a different checkout.
 
-CI note: Either install `libzstd-dev` in your runner image or configure CMake to vendor `zstd`.
+To install and consume a package:
 
-## Documentation
+```sh
+cmake --install build --prefix /path/to/prefix
+```
 
-- `include/pak_format.h` — C++ definitions for on-disk wire structs.
-- `include/asset_runtime.h` — runtime API types: `PakMount`, `AssetInfo`, `AssetBlob`, `AssetError`.
-- `docs/PAK_FORMAT.md` — human-readable wire-format description (new file).
+```cmake
+find_package(AssetPipeline CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE AssetPipeline::asset_runtime)
+```
 
-## Using from other projects
+Set `CMAKE_PREFIX_PATH` to that prefix. Installation includes `assetc`, runtime
+headers/library and the pinned BLAKE3 package; zstd-enabled packages additionally
+require zstd development files on the consuming machine. The config finds these
+transitive dependencies. No release tag has been created for the migration.
 
-You can consume this project from downstream CMake builds in three common ways.
+## Runtime and compiler review (2026-11-14)
 
-- Install + find_package (recommended for released versions)
+Pack parsing checks header/entry sizes, overflow-safe offsets, payload bounds,
+raw/stored size consistency, supported compression and unique IDs independently
+of optional hash verification. `Load` and `LoadTo` share bounded decoding; truncated
+or trailing zstd streams fail without a no-progress loop. Empty assets have valid
+BLAKE3 hashes, including compressed empty frames. The implementation supports
+little-endian hosts; the wire format has not changed.
 
-	Build and install into a prefix, then `find_package` in your project:
-
-	```bash
-	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-	cmake --build build -j
-	cmake --install build --prefix /opt/asset_pipeline
-	```
-
-	In your consumer `CMakeLists.txt`:
-
-	```cmake
-	find_package(AssetPipeline CONFIG REQUIRED PATHS /opt/asset_pipeline/lib/cmake/asset_pipeline)
-	target_link_libraries(myexe PRIVATE AssetPipeline::asset_runtime)
-	```
-
-- FetchContent (convenient for CI and per-repo reproducibility)
-
-	```cmake
-	include(FetchContent)
-	FetchContent_Declare(
-		asset_pipeline
-		GIT_REPOSITORY https://github.com/<owner>/myengine-asset-pipeline.git
-		GIT_TAG        v0.1.0
-	)
-	FetchContent_MakeAvailable(asset_pipeline)
-	target_link_libraries(myexe PRIVATE AssetPipeline::asset_runtime)
-	```
-
-- add_subdirectory / Git submodule (useful for local development)
-
-	```cmake
-	add_subdirectory(third_party/myengine-asset-pipeline)
-	target_link_libraries(myexe PRIVATE AssetPipeline::asset_runtime)
-	```
-
-CMake options useful to consumers and integrators (defaults shown):
-
-- `ENABLE_WERROR=ON` — treat warnings as errors during builds (default: `ON`).
-- `ENABLE_CLANG_TIDY=OFF` — enable clang-tidy during build when available (default: `OFF`).
-- `BUILD_TESTS=ON` — build the test suite (default: `ON`).
-
-Notes:
-- The exported target name is `AssetPipeline::asset_runtime` (see `src/CMakeLists.txt`).
-- The project already installs a package config and export files so `find_package` works after `cmake --install`.
-- `zstd` support is auto-detected; install system `zstd` dev packages to enable compression support at build time.
-
-## License
+The CLI sorts exact case-preserving keys before packing. Its versioned cache
+includes compression policy and the output digest, so option changes or corrupted
+outputs force rebuilding. Output and cache files inside the input directory are
+excluded. A private temporary pack replaces the output only after successful
+writing. Python 3, when available, enables six CLI regression scenarios in CTest.
+The pack safety suite covers malformed lengths, empty assets, truncated frames,
+trailing bytes and unknown-content-size zstd frames.

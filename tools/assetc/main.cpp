@@ -13,6 +13,16 @@
 #include <iomanip>
 #include <cstring>
 #include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <array>
+#include <blake3.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include "pak_writer.h"
 #include "hash128.h"
@@ -29,12 +39,43 @@ static auto to_hex(const pak::Hash128 &hash) -> std::string {
     return oss.str();
 }
 
-// Simple cache format: each line `key<TAB>hexhash`.
-static auto load_cache(const fs::path &path) -> std::unordered_map<std::string, std::string> {
+// Hash output packs incrementally; a cache hit must not allocate another pack-sized buffer.
+static auto hash_file(const fs::path& path) -> std::optional<std::string> {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return std::nullopt;
+    blake3_hasher hasher;
+    blake3_hasher_init(&hasher);
+    std::array<char, 65536> chunk{};
+    while (input) {
+        input.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+        const auto count = input.gcount();
+        if (count > 0) blake3_hasher_update(&hasher, chunk.data(), static_cast<std::size_t>(count));
+    }
+    if (!input.eof()) return std::nullopt;
+    pak::Hash128 digest;
+    blake3_hasher_finalize(&hasher, digest.bytes, sizeof(digest.bytes));
+    return to_hex(digest);
+}
+
+static void replace_output(const fs::path& candidate, const fs::path& destination) {
+#ifdef _WIN32
+    if (!MoveFileExW(candidate.c_str(), destination.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "replace output pack");
+    }
+#else
+    fs::rename(candidate, destination);
+#endif
+}
+
+// Versioned policy/output digest header, then `key<TAB>hexhash` records.
+static auto load_cache(const fs::path &path, const std::string& policy, const std::string& outputHash)
+    -> std::optional<std::unordered_map<std::string, std::string>> {
     std::unordered_map<std::string, std::string> out;
     std::ifstream in(path);
-    if (!in) { return out; }
+    if (!in) return std::nullopt;
     std::string line;
+    if (!std::getline(in, line) || line != policy ||
+        !std::getline(in, line) || line != outputHash) return std::nullopt;
     while (std::getline(in, line)) {
         if (line.empty()) { continue; }
         auto tab = line.find('\t');
@@ -46,9 +87,11 @@ static auto load_cache(const fs::path &path) -> std::unordered_map<std::string, 
     return out;
 }
 
-static auto write_cache(const fs::path &path, const std::unordered_map<std::string, std::string> &map) -> bool {
+static auto write_cache(const fs::path &path, const std::unordered_map<std::string, std::string> &map,
+                        const std::string& policy, const std::string& outputHash) -> bool {
     std::ofstream out(path, std::ios::trunc);
     if (!out) { return false; }
+    out << policy << '\n' << outputHash << '\n';
     for (const auto &kvp : map) {
         out << kvp.first << '\t' << kvp.second << '\n';
     }
@@ -61,7 +104,8 @@ static auto read_file_bytes(const fs::path &path, std::vector<uint8_t> &out) -> 
     in.seekg(0, std::ios::end);
     std::streamsize size = in.tellg();
     in.seekg(0, std::ios::beg);
-    if (size <= 0) {
+    if (size < 0) return false;
+    if (size == 0) {
         out.clear();
         return !!in;
     }
@@ -78,7 +122,9 @@ static auto canonical_key_from_path(const fs::path &root, const fs::path &file) 
 
 static auto detect_asset_type(const fs::path &path) -> pak::AssetType {
     auto ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
         return pak::AssetType::Texture2D;
     }
@@ -94,7 +140,7 @@ static auto detect_asset_type(const fs::path &path) -> pak::AssetType {
     return pak::AssetType::RawBytes;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
     bool useCompression = false;
     std::vector<std::string> args;
     if (argc > 0) {
@@ -105,12 +151,15 @@ int main(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "--compress" || arg == "-z") {
             useCompression = true;
+        } else if (arg.starts_with('-')) {
+            std::cerr << "Unknown option: " << arg << '\n';
+            return 1;
         } else {
             args.push_back(arg);
         }
     }
 
-    if (args.size() < 2) {
+    if (args.size() < 2 || args.size() > 3) {
         std::cout << "Usage: assetc <input_dir> <output.pak> [cachefile] [--compress]\n";
         return 1;
     }
@@ -124,7 +173,16 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    auto oldCache = load_cache(cacheFile);
+    input = fs::weakly_canonical(input);
+    outPak = fs::weakly_canonical(outPak);
+    cacheFile = fs::weakly_canonical(cacheFile);
+    if (outPak == cacheFile) {
+        std::cerr << "Output pack and cache must be different files\n";
+        return 2;
+    }
+    const std::string policy = useCompression ? "assetc-cache-v2 compress=1" : "assetc-cache-v2 compress=0";
+    const std::string oldOutputHash = hash_file(outPak).value_or(std::string{});
+    auto oldCache = load_cache(cacheFile, policy, oldOutputHash);
     std::unordered_map<std::string, std::string> newCache;
 
     struct ScanItem { fs::path path; std::string key; std::vector<uint8_t> bytes; std::string hexhash; };
@@ -134,6 +192,8 @@ int main(int argc, char** argv) {
     for (const auto &dirEntry : fs::recursive_directory_iterator(input)) {
         if (!dirEntry.is_regular_file()) { continue; }
         const auto &filePath = dirEntry.path();
+        const auto resolved = fs::weakly_canonical(filePath);
+        if (resolved == outPak || resolved == cacheFile) continue;
         std::string key = canonical_key_from_path(input, filePath);
         std::vector<uint8_t> buf;
         if (!read_file_bytes(filePath, buf)) {
@@ -152,10 +212,14 @@ int main(int argc, char** argv) {
     }
 
     // Quick compare: if the new cache matches the old cache and the output exists, skip writing.
-    if (!newCache.empty() && newCache == oldCache && fs::exists(outPak)) {
+    if (oldCache && newCache == *oldCache && !oldOutputHash.empty()) {
         std::cout << "No changes detected; skipping pak write.\n";
         return 0;
     }
+
+    std::sort(items.begin(), items.end(), [](const ScanItem& a, const ScanItem& b) {
+        return a.key < b.key;
+    });
 
     // Build writer entries from scanned items
     std::vector<PakWriterEntry> entries;
@@ -170,18 +234,40 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "Writing pak: " << outPak << " (" << entries.size() << " entries)\n";
-    auto res = WritePak(outPak.string(), entries);
+    // Write privately on the destination filesystem. A failed compression/write
+    // must not truncate a previously usable output pack.
+    fs::path temporary;
+    for (unsigned int attempt = 0; attempt < 100; ++attempt) {
+        temporary = outPak.string() + ".assetc-" +
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+            "-" + std::to_string(attempt);
+        if (fs::create_directory(temporary)) break;
+        temporary.clear();
+    }
+    if (temporary.empty()) { std::cerr << "Cannot reserve temporary output\n"; return 4; }
+    struct Cleanup {
+        fs::path path;
+        ~Cleanup() { std::error_code ignored; fs::remove_all(path, ignored); }
+    } cleanup{temporary};
+    const auto candidate = temporary / "pack";
+    auto res = WritePak(candidate.string(), entries);
     if (!res) {
         std::cerr << "WritePak failed: " << static_cast<int>(res.error) << " " << res.message << "\n";
         return 4;
     }
 
+    replace_output(candidate, outPak);
+    const auto outputHash = hash_file(outPak);
+    if (!outputHash) return 4;
+
     // Persist cache
-    if (!write_cache(cacheFile, newCache)) {
+    if (!write_cache(cacheFile, newCache, policy, *outputHash)) {
         std::cerr << "Warning: failed to write cache file: " << cacheFile << "\n";
     }
 
     std::cout << "Pak written successfully." << '\n';
     return 0;
+} catch (const std::exception& error) {
+    std::cerr << "assetc: " << error.what() << '\n';
+    return 4;
 }
-

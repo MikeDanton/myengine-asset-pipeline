@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstring>
 #include <istream>
+#include <memory>
 
 #if defined(ASSET_HAS_ZSTD) && ASSET_HAS_ZSTD
 #include <zstd.h>
@@ -16,22 +17,29 @@ namespace asset {
 
 bool DecompressZstd(const void* src, size_t srcSize, std::vector<uint8_t>& out) {
 #if defined(ASSET_HAS_ZSTD) && ASSET_HAS_ZSTD
-    if (!src || srcSize == 0) { out.clear(); return true; }
-    unsigned long long bound = ZSTD_getFrameContentSize(src, srcSize);
-    if (bound == ZSTD_CONTENTSIZE_ERROR || bound == ZSTD_CONTENTSIZE_UNKNOWN) {
-        // Unknown content size: attempt a decompression into a growing buffer
-        size_t estimated = srcSize * 3; // heuristic
-        out.resize(estimated);
-        size_t decompressed = ZSTD_decompress(out.data(), out.size(), src, srcSize);
-        if (ZSTD_isError(decompressed)) return false;
-        out.resize(decompressed);
-        return true;
+    out.clear();
+    if (!src && srcSize > 0) return false;
+    if (srcSize == 0) return true;
+    ZSTD_DCtx* dctx = ZSTD_createDCtx();
+    if (!dctx) return false;
+    std::unique_ptr<ZSTD_DCtx, decltype(&ZSTD_freeDCtx)> owner(dctx, &ZSTD_freeDCtx);
+    ZSTD_inBuffer input{src, srcSize, 0};
+    std::vector<uint8_t> chunk(ZSTD_DStreamOutSize());
+    while (true) {
+        ZSTD_outBuffer output{chunk.data(), chunk.size(), 0};
+        const size_t previous = input.pos;
+        const size_t ret = ZSTD_decompressStream(dctx, &output, &input);
+        if (ZSTD_isError(ret)) { out.clear(); return false; }
+        out.insert(out.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(output.pos));
+        if (ret == 0) {
+            const bool complete = input.pos == input.size;
+            if (!complete) out.clear();
+            return complete;
+        }
+        if (input.pos == previous && output.pos == 0) {
+            out.clear(); return false;
+        }
     }
-    out.resize(static_cast<size_t>(bound));
-    size_t decompressed = ZSTD_decompress(out.data(), out.size(), src, srcSize);
-    if (ZSTD_isError(decompressed)) return false;
-    out.resize(decompressed);
-    return true;
 #else
     (void)src; (void)srcSize; (void)out; return false;
 #endif
@@ -39,7 +47,9 @@ bool DecompressZstd(const void* src, size_t srcSize, std::vector<uint8_t>& out) 
 
 bool DecompressZstdTo(const void* src, size_t srcSize, void* dst, size_t dstCapacity, size_t& outWritten) {
 #if defined(ASSET_HAS_ZSTD) && ASSET_HAS_ZSTD
-    if (!src || srcSize == 0) { outWritten = 0; return true; }
+    outWritten = 0;
+    if ((!src && srcSize > 0) || (!dst && dstCapacity > 0)) return false;
+    if (srcSize == 0) return true;
     // If content size is known, prefer that
     unsigned long long contentSize = ZSTD_getFrameContentSize(src, srcSize);
     if (contentSize != ZSTD_CONTENTSIZE_ERROR && contentSize != ZSTD_CONTENTSIZE_UNKNOWN) {
@@ -63,16 +73,20 @@ bool DecompressZstdTo(const void* src, size_t srcSize, void* dst, size_t dstCapa
 
 bool DecompressZstdStreamTo(std::istream& is, size_t srcSize, void* dst, size_t dstCapacity, size_t& outWritten) {
 #if defined(ASSET_HAS_ZSTD) && ASSET_HAS_ZSTD
-    if (srcSize == 0) { outWritten = 0; return true; }
+    outWritten = 0;
+    if (!dst && dstCapacity > 0) return false;
+    if (srcSize == 0) return true;
     ZSTD_DCtx* dctx = ZSTD_createDCtx();
     if (!dctx) return false;
+    std::unique_ptr<ZSTD_DCtx, decltype(&ZSTD_freeDCtx)> owner(dctx, &ZSTD_freeDCtx);
 
     const size_t kInBuf = 1 << 16; // 64 KiB input chunks
     size_t inBufSize = (srcSize < kInBuf) ? srcSize : kInBuf;
     std::vector<char> inBuf(inBufSize);
     ZSTD_inBuffer input{inBuf.data(), 0, 0};
 
-    uint8_t* outPtr = static_cast<uint8_t*>(dst);
+    uint8_t empty = 0;
+    uint8_t* outPtr = dst ? static_cast<uint8_t*>(dst) : &empty;
     size_t outPos = 0;
     size_t remaining = srcSize;
 
@@ -81,27 +95,29 @@ bool DecompressZstdStreamTo(std::istream& is, size_t srcSize, void* dst, size_t 
             size_t toRead = (remaining < inBuf.size()) ? remaining : inBuf.size();
             is.read(inBuf.data(), static_cast<std::streamsize>(toRead));
             std::streamsize got = is.gcount();
-            if (got <= 0) { ZSTD_freeDCtx(dctx); return false; }
+            if (got <= 0) { return false; }
             input.src = inBuf.data();
             input.size = static_cast<size_t>(got);
             input.pos = 0;
             remaining -= static_cast<size_t>(got);
         }
 
+        const size_t previousInput = input.pos;
         ZSTD_outBuffer output{ outPtr + outPos, dstCapacity - outPos, 0 };
         size_t ret = ZSTD_decompressStream(dctx, &output, &input);
-        if (ZSTD_isError(ret)) { ZSTD_freeDCtx(dctx); return false; }
+        if (ZSTD_isError(ret)) { return false; }
         outPos += output.pos;
 
         // finished frame
-        if (ret == 0) break;
+        if (ret == 0) {
+            if (remaining != 0 || input.pos != input.size) { return false; }
+            break;
+        }
+        if (input.pos == previousInput && output.pos == 0) { return false; }
 
-        // if output buffer is full but frame not finished -> dst too small
-        if (outPos == dstCapacity && ret != 0) { ZSTD_freeDCtx(dctx); return false; }
     }
 
     outWritten = outPos;
-    ZSTD_freeDCtx(dctx);
     return true;
 #else
     (void)is; (void)srcSize; (void)dst; (void)dstCapacity; (void)outWritten; return false;
@@ -110,7 +126,7 @@ bool DecompressZstdStreamTo(std::istream& is, size_t srcSize, void* dst, size_t 
 
 bool CompressZstd(const void* src, size_t srcSize, std::vector<uint8_t>& out) {
 #if defined(ASSET_HAS_ZSTD) && ASSET_HAS_ZSTD
-    if (!src || srcSize == 0) { out.clear(); return true; }
+    if (!src && srcSize > 0) return false;
     size_t bound = ZSTD_compressBound(srcSize);
     out.resize(bound);
     int compressionLevel = 3; // reasonable default

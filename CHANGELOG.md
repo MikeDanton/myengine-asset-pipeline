@@ -1,5 +1,29 @@
 # Changelog
 
+Last edited: 2026-11-14.
+
+## Unreleased
+
+- Harden pack structural validation and bounded Load/LoadTo decoding; reject
+  inconsistent sizes, unsupported compression and duplicate IDs before use.
+- Fix empty-asset hashes, compressed empty frames, unknown-size zstd decoding,
+  and truncated/trailing stream handling with progress checks.
+- Make CLI output deterministic and caching sensitive to compression and output
+  integrity; avoid ingesting its own output/cache and preserve output on failed writes.
+- Add malformed-pack, decompression and CLI regression suites.
+
+
+- Recover engine-local fixes: standard FNV-1a offset basis, direct BLAKE3-128 output,
+  accurate hash contracts and optional verbose pack diagnostics. Pack IDs remain XXH64.
+- Pin BLAKE3 and xxHash, isolate warning/tool settings to library targets, and
+  provide the same namespaced target for embedding and installed consumers.
+- Detect optional system zstd correctly; repair compressed LoadTo test includes
+  and distinguish TOC integrity rejection from content-hash rejection.
+- Install assetc and complete package dependency discovery; isolate test working
+  directories for parallel execution and add FNV-1a regression vectors.
+- Make this standalone repository authoritative for MyEngine2 integration.
+
+
 ## v1.0.0 - 2025-12-19
 
 - Initial stable release.

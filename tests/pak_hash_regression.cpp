@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "xxhash64.h"
+#include "hash.h"
 #include "hash128.h"
 #include <vector>
 
@@ -28,6 +29,12 @@ static auto to_hex_bytes(const pak::Hash128& h) -> std::string {
 }
 
 auto main() -> int {
+    if (Hash64("") != 0xcbf29ce484222325ULL ||
+        Hash64("hello") != 0xa430d84680aabd0bULL) {
+        std::cerr << "FNV-1a regression\n";
+        return 3;
+    }
+
     struct Case { std::string input; std::string xxh64; std::string blake3_128; };
 
     // Prepare inputs including longer, non-ASCII and binary sequences

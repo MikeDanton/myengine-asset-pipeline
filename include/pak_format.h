@@ -87,7 +87,8 @@ static_assert(sizeof(PakTocEntryWire) == 64, "PakTocEntryWire must be 64 bytes")
 inline constexpr std::size_t PakHeaderSize()   { return sizeof(PakHeaderWire); }
 inline constexpr std::size_t PakTocEntrySize() { return sizeof(PakTocEntryWire); }
 
-// Canonical key rules (contract): forward slashes, lowercase, no leading '/'.
+// Canonical keys use forward slashes and no leading '/'. The CLI preserves
+// filename case; callers must use the same exact key when looking up an asset.
 // AssetId is computed as xxhash64(canonical_key).
 
 } // namespace asset::pak

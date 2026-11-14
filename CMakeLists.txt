@@ -1,92 +1,64 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 project(myengine_asset_pipeline VERSION 1.1.0 LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Option to enable strict warnings-as-errors for supported compilers.
-option(ENABLE_WERROR "Treat warnings as errors where supported" ON)
-
-# Apply stricter warning flags globally for GCC/Clang and MSVC when enabled.
-if(ENABLE_WERROR)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)")
-    # Include conversion/sign-conversion warnings for stricter checks.
-    # Apply only for C++ compilation so third-party C code isn't affected.
-    add_compile_options(
-      $<$<COMPILE_LANGUAGE:CXX>:-Wall>
-      $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
-      $<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>
-      $<$<COMPILE_LANGUAGE:CXX>:-Werror>
-      $<$<COMPILE_LANGUAGE:CXX>:-Wconversion>
-      $<$<COMPILE_LANGUAGE:CXX>:-Wsign-conversion>
-    )
-  elseif(MSVC)
-    # /W4 is very strict; /WX turns warnings into errors on MSVC
-    add_compile_options(
-      $<$<COMPILE_LANGUAGE:CXX>:/W4>
-      $<$<COMPILE_LANGUAGE:CXX>:/WX>
-    )
-  endif()
-endif()
-
-# Optional clang-tidy integration. Disabled by default because clang-tidy can be
-# noisy and slow; enable with -DENABLE_CLANG_TIDY=ON when you want to run it.
-option(ENABLE_CLANG_TIDY "Enable clang-tidy static analysis during build" OFF)
-if(ENABLE_CLANG_TIDY)
-  find_program(CLANG_TIDY_EXE NAMES clang-tidy)
-  if(CLANG_TIDY_EXE)
-    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}; enabling analysis")
-    # Use a conservative set of checks that are helpful for hardening.
-    # Restrict diagnostics to project headers/sources via header-filter so
-    # third-party warnings don't drown out useful diagnostics when clang-tidy
-    # runs as part of the build. Users can still override CMAKE_CXX_CLANG_TIDY
-    # manually if desired.
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-checks=clang-analyzer-*,cppcoreguidelines-*,modernize-*,performance-*,readability-*;-header-filter=^(include|src|tools|tests)/")
-  else()
-    message(WARNING "ENABLE_CLANG_TIDY requested but clang-tidy was not found on PATH")
-  endif()
-endif()
-
-option(BUILD_TESTS "Build tests" ON)
-
+option(ENABLE_WERROR "Treat project warnings as errors" ON)
+option(ENABLE_CLANG_TIDY "Run clang-tidy on project C++ targets" OFF)
+option(ASSET_PIPELINE_BUILD_TESTS "Build asset pipeline tests" ${PROJECT_IS_TOP_LEVEL})
+option(ASSET_PIPELINE_WITH_ZSTD "Enable zstd compression when available" ON)
+include(GNUInstallDirs)
 include(FetchContent)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Fetch xxHash (XXH64) for stable 64-bit asset ids
-FetchContent_Declare(
-  xxhash
+# Populate xxHash without invoking its legacy CMake project. Its C implementation
+# is compiled into asset_runtime, so installed users need no separate xxHash target.
+FetchContent_Declare(xxhash
   GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
-  GIT_TAG        v0.8.1
-)
-FetchContent_MakeAvailable(xxhash)
-
-# Fetch BLAKE3 C implementation for 128-bit content hashes
-FetchContent_Declare(
-  blake3
+  GIT_TAG v0.8.1
+  SOURCE_SUBDIR asset_pipeline_no_cmake)
+FetchContent_Declare(blake3
   GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git
-)
-FetchContent_MakeAvailable(blake3)
+  GIT_TAG 657284b1fa4c4378aa7422b4450dcb5c2c9052fc
+  SOURCE_SUBDIR c)
+FetchContent_MakeAvailable(xxhash blake3)
+# This pinned BLAKE3 revision generates its pkg-config file in its own binary
+# directory but installs from the top-level binary directory when embedded.
+configure_file("${blake3_BINARY_DIR}/libblake3.pc"
+               "${CMAKE_BINARY_DIR}/libblake3.pc" COPYONLY)
 
-# Optionally fetch zstd so builds are hermetic when desired. This mirrors
-# how xxHash and blake3 are fetched above and ensures `zstd` target is
-# available for linking when the system package is not present.
-FetchContent_Declare(
-  zstd
-  GIT_REPOSITORY https://github.com/facebook/zstd.git
-  GIT_TAG        v1.5.5
-)
-FetchContent_MakeAvailable(zstd)
-
-# The BLAKE3 project places its C CMake build under the `c/` subdirectory.
-# Add that subdirectory so it creates the `blake3`/`BLAKE3::blake3` target
-# we can link against.
-if(DEFINED blake3_SOURCE_DIR)
-  add_subdirectory(${blake3_SOURCE_DIR}/c ${blake3_BINARY_DIR}/c)
+set(ASSET_PIPELINE_HAS_ZSTD OFF)
+if(ASSET_PIPELINE_WITH_ZSTD)
+  find_package(ZSTD QUIET)
+  if(ZSTD_FOUND)
+    set(ASSET_PIPELINE_HAS_ZSTD ON)
+  else()
+    message(STATUS "zstd not found: compression disabled (install zstd development files to enable)")
+  endif()
 endif()
 
+function(asset_pipeline_configure_target target)
+  target_compile_features(${target} PUBLIC cxx_std_20)
+  set_target_properties(${target} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    target_compile_options(${target} PRIVATE
+      $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wsign-conversion>)
+    if(ENABLE_WERROR)
+      target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Werror>)
+    endif()
+  elseif(MSVC)
+    target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4>)
+    if(ENABLE_WERROR)
+      target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/WX>)
+    endif()
+  endif()
+  if(ENABLE_CLANG_TIDY)
+    find_program(CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
+    set_target_properties(${target} PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+  endif()
+endfunction()
 
 add_subdirectory(src)
 add_subdirectory(tools/assetc)
-if(BUILD_TESTS)
+if(ASSET_PIPELINE_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()

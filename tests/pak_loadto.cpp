@@ -3,6 +3,7 @@
 // buffer-too-small behavior, and content-hash verification.
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <string>
 #include <cstddef>
@@ -94,14 +95,23 @@ int main() {
         std::streamoff entryPos = static_cast<std::streamoff>(hdr.toc_offset + idx * hdr.toc_entry_size + offsetof(pak::PakTocEntryWire, content_hash));
         fs.seekp(entryPos, std::ios::beg);
         if (!fs) { std::cerr << "seekp failed" << '\n'; return 13; }
-        // flip a byte
-        char c = 0x1;
+        // Flip a byte rather than assigning a value it might already contain.
+        fs.seekg(entryPos, std::ios::beg);
+        char c = 0;
+        fs.read(&c, 1);
+        c = static_cast<char>(static_cast<unsigned char>(c) ^ 1u);
+        fs.seekp(entryPos, std::ios::beg);
         fs.write(&c, 1);
         fs.flush();
     }
 
-    // reopen mount and expect hash mismatch when verify_content_hash=true
-    auto mount2 = PakMount::Open(outPath, err, true);
+    // TOC verification must reject the altered hash metadata. Disable only
+    // that check to exercise the independent LoadTo content-hash check below.
+    auto rejected = PakMount::Open(outPath, err, true);
+    if (rejected || err != AssetError::TocCorrupt) {
+        std::cerr << "Expected corrupted TOC rejection" << '\n'; return 16;
+    }
+    auto mount2 = PakMount::Open(outPath, err, false);
     if (!mount2) { std::cerr << "PakMount::Open after mutate failed: " << static_cast<int>(err) << '\n'; return 14; }
     auto& m2 = *mount2;
     std::vector<uint8_t> zDst2(zRaw);
