@@ -25,6 +25,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME assetprep_regressions COMMAND ${Python3_EXECUTABLE}
     "${CMAKE_CURRENT_SOURCE_DIR}/test_assetprep.py")
   set_tests_properties(assetprep_regressions PROPERTIES TIMEOUT 60)
+  add_test(NAME assetgenerate_regressions COMMAND ${Python3_EXECUTABLE}
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_assetgenerate.py")
+  set_tests_properties(assetgenerate_regressions PROPERTIES TIMEOUT 60)
   # The Pillow image decoder is an optional *authoring* dependency only.
   execute_process(COMMAND ${Python3_EXECUTABLE} -c "import PIL"
     RESULT_VARIABLE ASSET_PIPELINE_PILLOW_STATUS
