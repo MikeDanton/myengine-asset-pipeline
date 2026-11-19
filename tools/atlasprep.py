@@ -91,12 +91,18 @@ def load_layout(layout_path):
                 any(type(value) is not int for value in pivot) or
                 not (0 <= pivot[0] <= frame_w and 0 <= pivot[1] <= frame_h)):
             raise AtlasError("pivot must be two integral coordinates within the frame")
-        if frame_w + 2 * padding > width or frame_h + 2 * padding > max_height:
+        output_w = integer(item.get("output_width", frame_w), "output_width")
+        output_h = integer(item.get("output_height", frame_h), "output_height")
+        resize_filter = item.get("resize_filter", "lanczos")
+        if resize_filter not in ("lanczos", "nearest"):
+            raise AtlasError("resize_filter must be lanczos or nearest")
+        if output_w + 2 * padding > width or output_h + 2 * padding > max_height:
             raise AtlasError(f"{name}: padded frame too large for atlas")
         total_frames += count
         if total_frames > MAX_FRAMES:
             raise AtlasError("too many atlas frames")
-        specs.append((name, source, frame_w, frame_h, count, direction, pivot))
+        specs.append((name, source, frame_w, frame_h, count, direction, pivot,
+                      output_w, output_h, resize_filter))
     return keys, width, max_height, padding, sorted(specs, key=lambda spec: spec[0])
 
 
@@ -127,7 +133,7 @@ def source_bytes(root, key):
 def unpack_frames(root, specs):
     from io import BytesIO
     frames = []
-    for name, source, fw, fh, count, direction, pivot in specs:
+    for name, source, fw, fh, count, direction, pivot, out_w, out_h, resize_filter in specs:
         data = source_bytes(root, source)
         try:
             with Image.open(BytesIO(data)) as image:
@@ -146,14 +152,22 @@ def unpack_frames(root, specs):
         for index in range(count):
             left, top = (index * fw, 0) if direction == "horizontal" else (0, index * fh)
             cropped = rgba.crop((left, top, left + fw, top + fh))
-            frames.append((name, index, source, digest, cropped, fw, fh, pivot))
+            if (out_w, out_h) != (fw, fh):
+                method = (Image.Resampling.LANCZOS if resize_filter == "lanczos"
+                          else Image.Resampling.NEAREST)
+                cropped = cropped.resize((out_w, out_h), method)
+            # Half-up integer pixel scaling (independent of locale/float rounding).
+            final_pivot = [(pivot[0] * out_w + fw // 2) // fw,
+                           (pivot[1] * out_h + fh // 2) // fh]
+            frames.append((name, index, source, digest, cropped, out_w, out_h,
+                           final_pivot, fw, fh, resize_filter))
     return frames
 
 
 def pack_positions(frames, width, max_height, pad):
     positions = []
     x = y = row_height = 0
-    for name, index, source, digest, frame, fw, fh, pivot in frames:
+    for name, index, source, digest, frame, fw, fh, pivot, source_w, source_h, resize_filter in frames:
         footprint_w, footprint_h = fw + pad * 2, fh + pad * 2
         if x + footprint_w > width:
             x, y, row_height = 0, y + row_height, 0
@@ -196,11 +210,13 @@ def compile_atlas(source_dir, layout_path, out_dir, replace=False):
     atlas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     metadata = {"version": 1, "atlas_key": keys[0], "width": width, "height": height,
                 "padding": padding, "frames": []}
-    for (name, index, source, digest, image, fw, fh, pivot), (x, y) in zip(frames, positions):
+    for (name, index, source, digest, image, fw, fh, pivot, source_w, source_h, resize_filter), (x, y) in zip(frames, positions):
         paste_extruded(atlas, image, x, y, padding)
         metadata["frames"].append({
             "id": name, "frame": index, "x": x, "y": y,
             "width": fw, "height": fh, "pivot": pivot,
+            "source_frame_width": source_w, "source_frame_height": source_h,
+            "resize_filter": resize_filter,
             "source_key": source, "source_sha256": digest,
         })
 
