@@ -113,3 +113,12 @@ review/rights requirements, staging commands and next milestones.
 ```sh
 python3 -m unittest discover -s tests -p test_assetprep.py
 ```
+
+## Deterministic sprite atlases
+
+After `assetprep` approves human/AI source PNGs, the optional offline
+`tools/atlasprep.py` (Python + Pillow) packs sprite strips into an RGBA atlas,
+extrudes edge padding, and emits per-frame UV rectangles and pivots as JSON.
+Pass its pack-ready output to the existing `assetc`; runtime does not need
+Python, Pillow, AI services or a new wire format. See
+[atlas workflow](docs/ATLAS_WORKFLOW.md) for a layout manifest and commands.
