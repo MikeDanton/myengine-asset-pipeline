@@ -28,6 +28,9 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME assetgenerate_regressions COMMAND ${Python3_EXECUTABLE}
     "${CMAKE_CURRENT_SOURCE_DIR}/test_assetgenerate.py")
   set_tests_properties(assetgenerate_regressions PROPERTIES TIMEOUT 60)
+  add_test(NAME candidate_import_regressions COMMAND ${Python3_EXECUTABLE}
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_candidate_import.py")
+  set_tests_properties(candidate_import_regressions PROPERTIES TIMEOUT 60)
   add_test(NAME openai_image_provider_regressions COMMAND ${Python3_EXECUTABLE}
     "${CMAKE_CURRENT_SOURCE_DIR}/test_openai_image_provider.py")
   set_tests_properties(openai_image_provider_regressions PROPERTIES TIMEOUT 60)

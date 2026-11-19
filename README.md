@@ -154,3 +154,13 @@ one-image, low-quality, transparent PNG API generation with `OPENAI_API_KEY` and
 The $0.50 request allowance is **not a guaranteed cost cap**, and API usage is
 billed separately from ChatGPT. See
 [first real assets](docs/CREATING_REAL_ASSETS.md) for tested setup and examples.
+
+## Import artwork generated outside the API
+
+`tools/candidate_import.py` accepts already-generated PNGs from ChatGPT, local
+models or other tools and stages them as **unreviewed** candidates in the same
+format used by `candidate_review.py`. It records the provided source and
+prompt fingerprint without falsely claiming a model identity, seed or cost.
+The original files are never changed. Review images and rights before manually
+copying selected artwork into the `assetprep` approved-source manifest.
+See [creating real assets](docs/CREATING_REAL_ASSETS.md) for the import spec.

@@ -45,6 +45,46 @@ running from a sibling game repository. `atlasprep` requires Pillow at build
 time; `assetprep` and `assetc` use the existing dependencies documented in
 the README. No generation service is invoked by these three commands.
 
+### Quarantine a manually generated ChatGPT image before approval
+
+For Northern Passage, the first art target is **gate stone**, not a lantern or
+character sprite: `textures/ruins/gate_stone.png`, 256×256 RGB in the platformer's
+`art/asset_catalog.json`. The generic mesh-albedo renderer must still prove it
+can display that texture; the candidate alone does not prove engine integration.
+
+Keep the original image in `game-art/unreviewed-source/gate-stone.png`. Instead
+of skipping the candidate stage, create `game-art/unreviewed-source/import.json`
+with a prompt fingerprint (calculate using `sha256sum` on the exact text):
+
+```json
+{
+  "version": 1,
+  "job_id": "northern-passage-gate-stone",
+  "provider": "ChatGPT Images",
+  "model": "model not exposed",
+  "prompt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "candidates": [{"file": "gate-stone.png"}]
+}
+```
+
+The zero digest above is a **placeholder**; replace it with the SHA-256 of the
+actual prompt before using the import. Do not guess a model or a billing amount.
+
+```sh
+python3 tools/candidate_import.py game-art/unreviewed-source/import.json \
+  build/unreviewed/gate-stone
+python3 tools/candidate_review.py build/unreviewed/gate-stone \
+  build/review/gate-stone
+```
+
+Both outputs remain **unreviewed**, with packaging-blocking quarantine markers.
+After visual review, source/rights review, and explicit approval, resize the
+chosen image to 256×256 RGB using a documented deterministic build step,
+then stage the actual 256×256 file at the catalog key
+`textures/ruins/gate_stone.png`. Do not rename, package or auto-approve the
+candidate merely because a prompt or image file exists. A textural tile
+preview (3×3 repeats) is useful to detect seams before committing the texture.
+
 ## Option B: generate one real PNG from a paid image API
 
 The optional `openai-images` adapter calls the **current OpenAI Image API**
