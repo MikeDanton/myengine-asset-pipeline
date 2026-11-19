@@ -1,8 +1,16 @@
 # Changelog
 
-Last edited: 2026-11-14.
+Last edited: 2026-11-19.
 
 ## Unreleased
+
+- Add reviewed human/AI PNG source adapters, manual provenance/rights gate and
+  deterministic staging outside the engine runtime.
+- Add offline sprite atlas generation with edge extrusion, frame metadata and
+  optional source-to-runtime scaling with deterministic pivot conversion.
+- Add quarantined mock and opt-in paid image generation adapters, candidate
+  contact sheets, and packer rejection of unreviewed candidate directories.
+- Preserve the existing .pak format, assetc C++ API and runtime dependencies.
 
 - Harden pack structural validation and bounded Load/LoadTo decoding; reject
   inconsistent sizes, unsupported compression and duplicate IDs before use.
