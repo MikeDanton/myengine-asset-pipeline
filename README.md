@@ -118,7 +118,8 @@ python3 -m unittest discover -s tests -p test_assetprep.py
 
 After `assetprep` approves human/AI source PNGs, the optional offline
 `tools/atlasprep.py` (Python + Pillow) packs sprite strips into an RGBA atlas,
-extrudes edge padding, and emits per-frame UV rectangles and pivots as JSON.
+optionally resizes high-resolution approved masters, extrudes edge padding,
+and emits per-frame atlas rectangles and pivots as JSON.
 Pass its pack-ready output to the existing `assetc`; runtime does not need
 Python, Pillow, AI services or a new wire format. See
 [atlas workflow](docs/ATLAS_WORKFLOW.md) for a layout manifest and commands.
@@ -130,8 +131,8 @@ contract with a deterministic mock provider. It produces **unreviewed**
 quarantined candidates, an auditable prompt digest and explicit cost metadata.
 Only reviewed and manually approved PNGs may pass through `assetprep`.
 `assetc` refuses any input tree containing the quarantine marker, even with
-a valid incremental cache. No network generation service or provider SDK is
-installed. See [generation workflow](docs/GENERATION_WORKFLOW.md).
+a valid incremental cache. The default mock runs entirely offline; a separate, explicitly gated paid
+Images API adapter is documented below. See [generation workflow](docs/GENERATION_WORKFLOW.md).
 
 ## Candidate preview sheets
 

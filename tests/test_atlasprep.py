@@ -126,6 +126,59 @@ class AtlasPrepTests(unittest.TestCase):
         self.run_tool()
         self.assertEqual(len(json.loads((self.out / "atlases/world.json").read_text())["frames"]), 2)
 
+    def test_resize_frames_scales_pivots_and_preserves_source(self):
+        self.layout["sprites"][0]["output_width"] = 1
+        self.layout["sprites"][0]["output_height"] = 1
+        self.layout["sprites"][0]["resize_filter"] = "nearest"
+        original = (self.approved / "sprites/torch.png").read_bytes()
+        self.run_tool()
+        meta = json.loads((self.out / "atlases/world.json").read_text())
+        self.assertEqual(meta["height"], 3)
+        self.assertEqual([(p["width"], p["height"]) for p in meta["frames"]],
+                         [(1, 1), (1, 1)])
+        self.assertEqual(meta["frames"][0]["pivot"], [1, 1])
+        self.assertEqual(meta["frames"][0]["source_frame_width"], 2)
+        self.assertEqual(meta["frames"][0]["source_frame_height"], 2)
+        self.assertEqual(meta["frames"][0]["resize_filter"], "nearest")
+        with Image.open(self.out / "atlases/world.png") as image:
+            self.assertEqual(image.getpixel((1, 1)), (255, 0, 0, 255))
+            self.assertEqual(image.getpixel((4, 1)), (0, 0, 255, 128))
+        self.assertEqual(original, (self.approved / "sprites/torch.png").read_bytes())
+        first = (self.out / "atlases/world.png").read_bytes()
+        self.run_tool()
+        self.assertEqual(first, (self.out / "atlases/world.png").read_bytes())
+
+    def test_large_master_downscales_for_runtime_atlas(self):
+        image = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        image.paste((128, 80, 40, 255), (32, 32, 224, 224))
+        image.save(self.approved / "sprites/torch.png")
+        self.layout.update(atlas_width=128, max_height=128, padding=2)
+        self.layout["sprites"][0].update(frame_width=256, frame_height=256,
+                                         frame_count=1, pivot=[128, 192],
+                                         output_width=64, output_height=64,
+                                         resize_filter="lanczos")
+        self.run_tool()
+        meta = json.loads((self.out / "atlases/world.json").read_text())
+        frame = meta["frames"][0]
+        self.assertEqual((frame["width"], frame["height"]), (64, 64))
+        self.assertEqual((frame["source_frame_width"], frame["source_frame_height"]),
+                         (256, 256))
+        self.assertEqual(frame["pivot"], [32, 48])
+        with Image.open(self.out / "atlases/world.png") as atlas:
+            self.assertEqual(atlas.getpixel((2 + 32, 2 + 32)), (128, 80, 40, 255))
+
+    def test_bad_resize_filter_and_dimensions_fail_without_overwriting_output(self):
+        self.run_tool()
+        good = (self.out / "atlases/world.png").read_bytes()
+        self.layout["sprites"][0]["resize_filter"] = "unknown"
+        self.run_tool(ok=False)
+        self.layout["sprites"][0]["resize_filter"] = "lanczos"
+        self.layout["sprites"][0]["output_width"] = 0
+        self.run_tool(ok=False)
+        self.layout["sprites"][0]["output_width"] = 8192
+        self.run_tool(ok=False)
+        self.assertEqual(good, (self.out / "atlases/world.png").read_bytes())
+
     def test_symlink_in_approved_tree_is_rejected(self):
         candidate = self.approved / "sprites/link.png"
         try:
