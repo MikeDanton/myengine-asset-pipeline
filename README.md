@@ -7,6 +7,8 @@ consumes this checkout through `add_subdirectory`; make library changes here,
 run its tests here, and commit them here. Do not maintain another source copy in
 the engine. The last published release is v1.1.0; the changes below are unreleased.
 
+GPT/Codex contributors follow the [merge-on-green and PR ownership policy](docs/CONTINUOUS_INTEGRATION_PR_OWNERSHIP.md). CI-green low-risk PRs can be integrated by their author; new artwork, source rights, paid generation, and release decisions remain human-gated.
+
 ## Build and test
 
 Requires CMake 3.24+, a C++20 compiler and Git. xxHash v0.8.1 and the tested BLAKE3
