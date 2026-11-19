@@ -132,3 +132,11 @@ Only reviewed and manually approved PNGs may pass through `assetprep`.
 `assetc` refuses any input tree containing the quarantine marker, even with
 a valid incremental cache. No network generation service or provider SDK is
 installed. See [generation workflow](docs/GENERATION_WORKFLOW.md).
+
+## Candidate preview sheets
+
+The optional `tools/candidate_review.py` creates a review-only contact sheet
+from quarantined generated PNGs, verifies every candidate against its SHA-256
+receipt, and emits another quarantine marker to keep previews out of `assetc`.
+It never approves or promotes content. See
+[candidate review](docs/CANDIDATE_REVIEW.md) for commands and safety boundaries.
