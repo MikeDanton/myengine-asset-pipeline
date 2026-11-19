@@ -1,6 +1,6 @@
 # Asset Pack Pipeline
 
-Last edited: 2026-11-14. Last reviewed: 2026-11-14 (standalone and engine integration).
+Last edited: 2026-11-19. Last reviewed: 2026-11-14 (C++ packer and engine integration).
 
 This repository is the source of truth for `asset_runtime` and `assetc`. MyEngine2
 consumes this checkout through `add_subdirectory`; make library changes here,
@@ -98,3 +98,18 @@ excluded. A private temporary pack replaces the output only after successful
 writing. Python 3, when available, enables six CLI regression scenarios in CTest.
 The pack safety suite covers malformed lengths, empty assets, truncated frames,
 trailing bytes and unknown-content-size zstd frames.
+
+## Reviewed asset sources (human and AI)
+
+The upstream Python `tools/assetprep.py` command stages approved PNG artwork from
+separate `human-file` and `ai-import` adapters, validates source/asset keys and
+basic PNG structure, and creates a deterministic provenance sidecar **outside**
+the staging tree. It does not call image-generation APIs or modify the existing
+`.pak` wire format. After staging, pass the output directory to `assetc` as usual.
+
+See [Source workflow](docs/SOURCE_WORKFLOW.md) for the manifest contract,
+review/rights requirements, staging commands and next milestones.
+
+```sh
+python3 -m unittest discover -s tests -p test_assetprep.py
+```
