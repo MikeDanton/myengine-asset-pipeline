@@ -52,14 +52,24 @@ build/tools/assetc/assetc build/pack-ready build/platformer.pak
 Source PNGs must already be in build/approved. Strip dimensions must exactly
 match the declared frame count; single frames are the default. Pivot is an
 integer pixel coordinate relative to the original frame, top-left origin.
-No trimming, rescaling, rotation or visual evaluation is performed.
+No trimming, rotation or visual evaluation is performed. Optional deterministic
+resizing happens after extracting each frame. Add `output_width` and
+`output_height` to an entry to create a smaller runtime frame while preserving
+the approved original PNG. `resize_filter` is `lanczos` (default; painted art)
+or `nearest` (pixel art). For example, a 1024x1024 generated torch master
+can use `frame_width: 1024`, `frame_height: 1024`,
+`output_width: 128`, `output_height: 128`, `pivot: [512, 960]`
+and `resize_filter: "lanczos"`.
 
 ## Outputs and contracts
 
 - atlases/environment.png: RGBA atlas, sorted sprite IDs, ordered frame indices,
   shelf/row placement, optional edge extrusion to prevent texture bleeding.
 - atlases/environment.json: versioned runtime metadata, with id, frame, x, y,
-  width, height, pivot, source_key and source_sha256. Positions cover the
+  width, height, pivot, source_key and source_sha256; the optional resize
+  contract also records source_frame_width, source_frame_height and resize_filter.
+  Pivot is converted from source-frame pixels into output-frame pixels using
+  deterministic half-up integer rounding. Positions cover the
   unpadded interior of each frame. The origin is top-left.
 - The approved source files are copied byte-for-byte, allowing inspection or
   future fallback behavior. No AI prompts, personal attribution or licensing
