@@ -100,8 +100,8 @@ class CandidateReviewTests(unittest.TestCase):
     def test_no_implicit_overwrite_and_invalid_layout(self):
         self.run_review()
         self.run_review(ok=False, replace=False)
-        self.run_review(ok=False, *["--columns", "0"])
-        self.run_review(ok=False, *["--tile-size", "24"])
+        self.run_review(False, True, "--columns", "0")
+        self.run_review(False, True, "--tile-size", "24")
 
     def test_source_symlink_rejected(self):
         image = self.candidates / "candidate-003.png"
