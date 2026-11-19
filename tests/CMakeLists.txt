@@ -36,6 +36,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME atlasprep_regressions COMMAND ${Python3_EXECUTABLE}
       "${CMAKE_CURRENT_SOURCE_DIR}/test_atlasprep.py")
     set_tests_properties(atlasprep_regressions PROPERTIES TIMEOUT 60)
+    add_test(NAME candidate_review_regressions COMMAND ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/test_candidate_review.py")
+    set_tests_properties(candidate_review_regressions PROPERTIES TIMEOUT 60)
   else()
     message(STATUS "Pillow unavailable: optional atlasprep tests not registered")
   endif()
