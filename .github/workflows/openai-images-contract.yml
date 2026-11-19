@@ -1,0 +1,39 @@
+name: Optional live image API contract
+
+on:
+  pull_request:
+    paths:
+      - 'tools/openai_image_provider.py'
+      - 'tools/assetgenerate.py'
+      - 'tests/test_openai_image_provider.py'
+      - 'tests/test_assetgenerate.py'
+      - '.github/workflows/openai-images-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/openai_image_provider.py'
+      - 'tools/assetgenerate.py'
+      - 'tests/test_openai_image_provider.py'
+      - 'tests/test_assetgenerate.py'
+      - '.github/workflows/openai-images-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mocked-live-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      OPENAI_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run entirely offline provider and existing mock contracts
+        run: |
+          python -m unittest discover -s tests -p 'test_openai_image_provider.py' -v
+          python -m unittest discover -s tests -p 'test_assetgenerate.py' -v
+      - name: Check Python syntax
+        run: python -m py_compile tools/assetgenerate.py tools/openai_image_provider.py tests/test_openai_image_provider.py
