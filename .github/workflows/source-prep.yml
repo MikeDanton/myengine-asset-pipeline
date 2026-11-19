@@ -1,0 +1,25 @@
+name: Asset source preparation
+
+on:
+  pull_request:
+    paths:
+      - 'tools/assetprep.py'
+      - 'tests/test_assetprep.py'
+      - '.github/workflows/source-prep.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/assetprep.py'
+      - 'tests/test_assetprep.py'
+      - '.github/workflows/source-prep.yml'
+
+jobs:
+  source-prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source import regression contracts
+        run: python3 -m unittest discover -s tests -p test_assetprep.py -v
