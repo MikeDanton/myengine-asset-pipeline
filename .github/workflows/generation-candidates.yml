@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   offline-generation:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -33,12 +33,12 @@ jobs:
         run: python3 -m py_compile tools/assetgenerate.py tests/test_assetgenerate.py
 
   packer-quarantine:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Install C++ build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+      - name: Verify bundled C++ build tools
+        run: cmake --version && ninja --version
       - name: Configure standalone packer
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DASSET_PIPELINE_WITH_ZSTD=OFF
       - name: Build C++ asset compiler
