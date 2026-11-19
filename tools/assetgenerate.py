@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate quarantined image candidates via an explicit, provider-neutral port.
 
-v1 intentionally registers only a deterministic offline mock provider. Nothing
-created by this command is reviewed or suitable for the assetc packaging tree.
+The offline mock is the default. An optional real image API provider requires
+an explicit paid-generation flag and credentials. Nothing this command writes
+is approved or directly suitable for packaging.
 """
 
 import argparse
@@ -17,15 +18,15 @@ import shutil
 import struct
 import sys
 import tempfile
-from typing import Protocol
+from typing import Optional, Protocol
 import zlib
 
 from assetprep import AssetPrepError, inspect_png
 
 QUARANTINE_MARKER = ".asset-pipeline-quarantine.json"
 MAX_CANDIDATES = 16
-MAX_IMAGE_SIDE = 512
-MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_SIDE = 1024
+MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 MAX_SPEC_BYTES = 64 * 1024
 
 
@@ -49,8 +50,9 @@ class GenerationRequest:
 @dataclass(frozen=True)
 class GeneratedImage:
     png: bytes
-    seed: int
+    seed: Optional[int]
     cost_usd: float
+    cost_estimated: bool = False
 
 
 class GenerationProvider(Protocol):
@@ -60,7 +62,7 @@ class GenerationProvider(Protocol):
     model: str
 
     def estimate_cost_usd(self, request: GenerationRequest) -> float:
-        """Conservative upper bound used before making provider requests."""
+        """Preflight allowance (not a guaranteed maximum invoice for paid APIs)."""
 
     def generate_candidates(self, request: GenerationRequest) -> list[GeneratedImage]:
         """Return candidates and measured costs; never publish to approved assets."""
@@ -128,6 +130,8 @@ class MockCheckerProvider:
         return 0.0
 
     def generate_candidates(self, request: GenerationRequest) -> list[GeneratedImage]:
+        if request.width > 512 or request.height > 512:
+            raise GenerationError("mock fixture dimensions must not exceed 512x512")
         output = []
         for index in range(request.candidate_count):
             seed = (request.seed + index) % (1 << 32)
@@ -149,8 +153,42 @@ class MockCheckerProvider:
         return output
 
 
+
+class OpenAIImagesProvider:
+    """Opt-in paid Image API adapter; NOT enabled by generation JSON alone."""
+
+    name = "openai-images"
+
+    def __init__(self, model: str):
+        self.model = model
+
+    def estimate_cost_usd(self, request: GenerationRequest) -> float:
+        from openai_image_provider import PREFLIGHT_ALLOWANCE_USD, SUPPORTED_MODELS
+        if self.model not in SUPPORTED_MODELS:
+            raise GenerationError("unsupported paid image model")
+        if request.candidate_count != 1:
+            raise GenerationError("paid v1 supports one image per explicit invocation")
+        if (request.width, request.height) != (1024, 1024):
+            raise GenerationError("paid v1 supports 1024x1024 only")
+        if request.seed != 0:
+            raise GenerationError("live model does not support seed; set seed to 0")
+        return PREFLIGHT_ALLOWANCE_USD
+
+    def generate_candidates(self, request: GenerationRequest) -> list[GeneratedImage]:
+        from openai_image_provider import ImageProviderError, request_one_png
+        try:
+            png, estimated_cost = request_one_png(
+                self.model, request.prompt, request.width, request.height
+            )
+        except ImageProviderError as exc:
+            raise GenerationError(str(exc)) from exc
+        # Image API does not expose a reproducible seed. Record null, not a fake seed.
+        return [GeneratedImage(png, None, estimated_cost, True)]
+
+
 # Explicit registration: never import modules based on untrusted spec fields.
 PROVIDERS: dict[str, GenerationProvider] = {"mock": MockCheckerProvider()}
+
 
 
 def validate_results(request, provider, results):
@@ -163,7 +201,10 @@ def validate_results(request, provider, results):
             raise GenerationError("provider returned a malformed candidate")
         if len(candidate.png) > MAX_OUTPUT_BYTES:
             raise GenerationError("candidate exceeds PNG size limit")
-        if type(candidate.seed) is not int or candidate.seed < 0 or candidate.seed >= 1 << 32:
+        if candidate.seed is None:
+            if provider.name != "openai-images":
+                raise GenerationError("only providers without seed support may return null seed")
+        elif type(candidate.seed) is not int or candidate.seed < 0 or candidate.seed >= 1 << 32:
             raise GenerationError("candidate has invalid seed")
         if type(candidate.cost_usd) not in (float, int) or not math.isfinite(candidate.cost_usd) or candidate.cost_usd < 0:
             raise GenerationError("candidate has invalid cost")
@@ -185,12 +226,13 @@ def validate_results(request, provider, results):
             "height": png["height"],
             "seed": candidate.seed,
             "cost_usd": candidate.cost_usd,
+            "cost_estimated": candidate.cost_estimated,
             "approved": False,
         }))
     return validated, total_cost
 
 
-def generate(spec_path: Path, out_dir: Path, replace=False):
+def generate(spec_path: Path, out_dir: Path, replace=False, allow_paid=False):
     if out_dir.is_symlink():
         raise GenerationError("output may not be a symlink")
     spec_path = spec_path.resolve()
@@ -200,9 +242,14 @@ def generate(spec_path: Path, out_dir: Path, replace=False):
     if out_dir.exists() and (not out_dir.is_dir() or not replace):
         raise GenerationError("output already exists; use --replace to replace it")
     request, spec_digest = load_request(spec_path)
-    provider = PROVIDERS.get(request.provider)
+    if request.provider == "openai-images":
+        if not allow_paid:
+            raise GenerationError("paid generation blocked; pass --allow-paid-generation explicitly")
+        provider = OpenAIImagesProvider(request.model)
+    else:
+        provider = PROVIDERS.get(request.provider)
     if provider is None or provider.name != request.provider or provider.model != request.model:
-        raise GenerationError("provider/model is not registered; v1 supports mock/checker-v1 only")
+        raise GenerationError("provider/model is not registered")
     estimate = provider.estimate_cost_usd(request)
     if type(estimate) not in (float, int) or not math.isfinite(estimate) or estimate < 0 or estimate > request.max_cost_usd:
         raise GenerationError("provider estimate exceeds generation budget")
@@ -219,6 +266,7 @@ def generate(spec_path: Path, out_dir: Path, replace=False):
         "spec_sha256": spec_digest,
         "candidate_count": len(validated),
         "cost_usd": actual_cost,
+        "cost_estimated": request.provider == "openai-images",
         "candidates": [item[2] for item in validated],
     }
 
@@ -256,9 +304,12 @@ def main(argv=None):
     parser.add_argument("spec", type=Path, help="JSON request; may contain a private prompt")
     parser.add_argument("out_dir", type=Path, help="separate unreviewed candidates directory")
     parser.add_argument("--replace", action="store_true")
+    parser.add_argument("--allow-paid-generation", action="store_true",
+                        help="explicitly enable one billable API request; requires OPENAI_API_KEY")
     args = parser.parse_args(argv)
     try:
-        count = generate(args.spec, args.out_dir, args.replace)
+        count = generate(args.spec, args.out_dir, args.replace,
+                         allow_paid=args.allow_paid_generation)
         print(f"Created {count} UNREVIEWED candidate(s) in {args.out_dir}")
         return 0
     except (GenerationError, OSError) as exc:
