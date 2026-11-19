@@ -89,6 +89,8 @@ The preflight estimate prevents a known over-budget call; postflight validation 
 
 The mock uses a deterministic seed and prompt-derived checker pattern, so repeated runs are byte-identical. Real hosted models may not reproduce byte-identical outputs; preserve the **approved resulting bytes** and provenance rather than promising reproducible model generation.
 
+See [candidate visual review](CANDIDATE_REVIEW.md) for the optional contact-sheet tool, which validates source hashes and generates an unapproved comparison image.
+
 ## Scope and next work
 
 - Add a real provider adapter only when an explicit backend and budget are selected; never dynamically import an arbitrary module named in an untrusted JSON spec.
