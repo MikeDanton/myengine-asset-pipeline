@@ -47,9 +47,9 @@ def load_source(root, name, out_dir):
         raise AssetPrepError(f"source outside manifest root or inside staging: {name}")
     if not resolved.is_file():
         raise AssetPrepError(f"source file missing: {name}")
-    if source.stat().st_size > MAX_PNG_BYTES:
+    if resolved.stat().st_size > MAX_PNG_BYTES:
         raise AssetPrepError(f"source exceeds {MAX_PNG_BYTES} bytes: {name}")
-    content = source.read_bytes()
+    content = resolved.read_bytes()
     if len(content) > MAX_PNG_BYTES:
         raise AssetPrepError(f"source exceeds {MAX_PNG_BYTES} bytes: {name}")
     return content
@@ -247,11 +247,11 @@ def stage(manifest_path, out_dir, provenance_path, replace=False):
                 backup = None
             raise
         if backup:
-            shutil.rmtree(backup)
+            shutil.rmtree(backup, ignore_errors=True)
         return len(staged)
     finally:
         if temporary is not None and temporary.exists():
-            shutil.rmtree(temporary)
+            shutil.rmtree(temporary, ignore_errors=True)
         if report_tmp is not None:
             report_tmp.unlink(missing_ok=True)
 
