@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - 'tools/candidate_review.py'
+      - 'tools/candidate_import.py'
       - 'tests/test_candidate_review.py'
+      - 'tests/test_candidate_import.py'
       - 'docs/CANDIDATE_REVIEW.md'
       - 'tests/CMakeLists.txt'
       - '.github/workflows/candidate-review.yml'
@@ -33,5 +35,6 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_assetgenerate.py' -v
           python -m unittest discover -s tests -p 'test_candidate_review.py' -v
+          python -m unittest discover -s tests -p 'test_candidate_import.py' -v
       - name: Compile authoring scripts
-        run: python -m py_compile tools/assetgenerate.py tools/candidate_review.py tests/test_candidate_review.py
+        run: python -m py_compile tools/assetgenerate.py tools/candidate_import.py tools/candidate_review.py tests/test_candidate_import.py tests/test_candidate_review.py
