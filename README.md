@@ -122,3 +122,13 @@ extrudes edge padding, and emits per-frame UV rectangles and pivots as JSON.
 Pass its pack-ready output to the existing `assetc`; runtime does not need
 Python, Pillow, AI services or a new wire format. See
 [atlas workflow](docs/ATLAS_WORKFLOW.md) for a layout manifest and commands.
+
+## Offline candidate generation
+
+`tools/assetgenerate.py` introduces a provider-neutral build-time generation
+contract with a deterministic mock provider. It produces **unreviewed**
+quarantined candidates, an auditable prompt digest and explicit cost metadata.
+Only reviewed and manually approved PNGs may pass through `assetprep`.
+`assetc` refuses any input tree containing the quarantine marker, even with
+a valid incremental cache. No network generation service or provider SDK is
+installed. See [generation workflow](docs/GENERATION_WORKFLOW.md).
