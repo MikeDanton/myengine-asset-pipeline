@@ -22,6 +22,9 @@ if(Python3_Interpreter_FOUND)
     "${CMAKE_CURRENT_SOURCE_DIR}/test_assetc.py" $<TARGET_FILE:assetc>
     $<BOOL:${ASSET_PIPELINE_HAS_ZSTD}>)
   set_tests_properties(assetc_regressions PROPERTIES TIMEOUT 60)
+  add_test(NAME assetprep_regressions COMMAND ${Python3_EXECUTABLE}
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_assetprep.py")
+  set_tests_properties(assetprep_regressions PROPERTIES TIMEOUT 60)
 else()
   message(STATUS "Python3 unavailable: assetc CLI regression suite not registered")
 endif()
