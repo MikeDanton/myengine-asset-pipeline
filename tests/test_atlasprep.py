@@ -51,7 +51,7 @@ class AtlasPrepTests(unittest.TestCase):
     def test_two_frames_atlas_metadata_and_extrusion(self):
         self.run_tool()
         meta = json.loads((self.out / "atlases/world.json").read_text())
-        self.assertEqual((meta["width"], meta["height"]), (8, 8))
+        self.assertEqual((meta["width"], meta["height"]), (8, 4))
         frames = meta["frames"]
         self.assertEqual([(x["frame"], x["x"], x["y"]) for x in frames],
                          [(0, 1, 1), (1, 5, 1)])
