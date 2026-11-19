@@ -25,6 +25,17 @@ if(Python3_Interpreter_FOUND)
   add_test(NAME assetprep_regressions COMMAND ${Python3_EXECUTABLE}
     "${CMAKE_CURRENT_SOURCE_DIR}/test_assetprep.py")
   set_tests_properties(assetprep_regressions PROPERTIES TIMEOUT 60)
+  # The Pillow image decoder is an optional *authoring* dependency only.
+  execute_process(COMMAND ${Python3_EXECUTABLE} -c "import PIL"
+    RESULT_VARIABLE ASSET_PIPELINE_PILLOW_STATUS
+    OUTPUT_QUIET ERROR_QUIET)
+  if(ASSET_PIPELINE_PILLOW_STATUS EQUAL 0)
+    add_test(NAME atlasprep_regressions COMMAND ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/test_atlasprep.py")
+    set_tests_properties(atlasprep_regressions PROPERTIES TIMEOUT 60)
+  else()
+    message(STATUS "Pillow unavailable: optional atlasprep tests not registered")
+  endif()
 else()
   message(STATUS "Python3 unavailable: assetc CLI regression suite not registered")
 endif()
