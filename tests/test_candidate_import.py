@@ -136,6 +136,25 @@ class ExternalImageImportTests(unittest.TestCase):
         self.run_cli(ok=False)
         self.assertFalse(self.out.exists())
 
+    def test_imported_candidates_are_reviewable_when_pillow_installed(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow required for visual contact sheet")
+        self.run_cli()
+        destination = self.root / "review"
+        cli = Path(__file__).resolve().parents[1] / "tools/candidate_review.py"
+        result = subprocess.run(
+            [sys.executable, str(cli), str(self.out), str(destination)],
+            capture_output=True, text=True, timeout=12)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with Image.open(destination / "contact-sheet.png") as sheet:
+            self.assertGreater(sheet.width, 0)
+        review_receipt = json.loads((destination / MARKER).read_text())
+        self.assertFalse(review_receipt["approved"])
+        self.assertEqual(review_receipt["candidates"][0]["sha256"],
+                         hashlib.sha256((self.out / "candidate-001.png").read_bytes()).hexdigest())
+
     def test_no_api_invocation_or_secret_prompts(self):
         self.run_cli()
         marker = (self.out / MARKER).read_text()
