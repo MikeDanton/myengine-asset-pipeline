@@ -96,7 +96,10 @@ class AssetPrepTests(unittest.TestCase):
 
     def test_source_escape_rejected(self):
         (self.root / "source/hand.png").unlink()
-        (self.root / "source/hand.png").symlink_to("/etc/hosts")
+        try:
+            (self.root / "source/hand.png").symlink_to("/etc/hosts")
+        except (OSError, NotImplementedError):
+            self.skipTest("symlink creation unavailable")
         self.run_pipeline([self.human], ok=False)
 
     def test_provenance_must_not_be_packed(self):
