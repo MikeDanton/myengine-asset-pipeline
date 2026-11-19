@@ -140,3 +140,16 @@ from quarantined generated PNGs, verifies every candidate against its SHA-256
 receipt, and emits another quarantine marker to keep previews out of `assetc`.
 It never approves or promotes content. See
 [candidate review](docs/CANDIDATE_REVIEW.md) for commands and safety boundaries.
+
+## First real artwork: ChatGPT image imports or opt-in paid API
+
+Real artwork can already enter the pipeline through the reviewed `ai-import`
+adapter: generate a PNG in ChatGPT, save it locally, record the actual provider,
+prompt fingerprint and distribution-rights review, then stage and package it.
+
+An optional live `openai-images` adapter also supports an explicitly authorized,
+one-image, low-quality, transparent PNG API generation with `OPENAI_API_KEY` and
+`--allow-paid-generation`. It never auto-approves art and is never called by CI.
+The $0.50 request allowance is **not a guaranteed cost cap**, and API usage is
+billed separately from ChatGPT. See
+[first real assets](docs/CREATING_REAL_ASSETS.md) for tested setup and examples.
