@@ -19,7 +19,7 @@ assetprep.py -> approved/ + external provenance
 atlasprep.py (optional) -> pack-ready/ -> assetc -> game.pak
 ```
 
-**Only the deterministic offline mock provider is registered today.** It produces obviously synthetic checkerboard PNGs to exercise the provider contract and costs $0. No hosted or local AI-generation service is integrated; no keys, payments, or network calls occur. Real provider adapters can implement `GenerationProvider` but should not be registered until separately reviewed, budgeted, tested, and configured.
+**The deterministic offline mock is the default. An optional, explicitly paid OpenAI Images provider is also available.** It produces obviously synthetic checkerboard PNGs to exercise the provider contract and costs $0. The mock never makes network calls. The paid provider requires an explicit CLI flag and OPENAI_API_KEY, and makes only one request without retries. See [real assets](CREATING_REAL_ASSETS.md). Real provider adapters can implement `GenerationProvider` but should not be registered until separately reviewed, budgeted, tested, and configured.
 
 ## Generate a test candidate batch
 
