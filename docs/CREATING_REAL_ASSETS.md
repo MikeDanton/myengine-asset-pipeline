@@ -112,6 +112,24 @@ painted shadows, or animation inconsistencies. Resize/crop/slice only during
 a deterministic **build-time** transformation, and review the in-game
 appearance before accepting a public release.
 
+### Turning a generated 1024px master into a game sprite
+
+The new atlas stage can resize each approved PNG frame without changing its
+high-resolution source. Add this sprite to the game's atlas layout, alongside
+other approved sprites:
+
+```json
+{"id": "torch", "source_key": "sprites/torch.png",
+ "frame_width": 1024, "frame_height": 1024, "frame_count": 1,
+ "output_width": 128, "output_height": 128,
+ "resize_filter": "lanczos", "pivot": [512, 960]}
+```
+
+The generated atlas records a 128x128 frame and converts the pivot to [64,120].
+Use `nearest` for true pixel-art sources. Image resampling is deterministic
+under the pinned Pillow version, but still requires visual inspection in-game.
+The original 1024px image remains unchanged in the approved source collection.
+
 ## SimGame follow-up
 
 Use the same exact process for a small, bounded visual family, e.g. one
