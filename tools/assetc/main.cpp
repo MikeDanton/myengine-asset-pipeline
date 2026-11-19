@@ -192,6 +192,13 @@ int main(int argc, char** argv) try {
     for (const auto &dirEntry : fs::recursive_directory_iterator(input)) {
         if (!dirEntry.is_regular_file()) { continue; }
         const auto &filePath = dirEntry.path();
+        // Fail closed if candidate generation outputs leaked into this tree.
+        // Check before the pack cache shortcut, including nested directories.
+        if (filePath.filename() == ".asset-pipeline-quarantine.json") {
+            std::cerr << "Refusing to package unreviewed generation candidates: "
+                      << filePath << "\n";
+            return 3;
+        }
         const auto resolved = fs::weakly_canonical(filePath);
         if (resolved == outPak || resolved == cacheFile) continue;
         std::string key = canonical_key_from_path(input, filePath);

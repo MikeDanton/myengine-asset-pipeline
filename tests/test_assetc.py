@@ -66,6 +66,22 @@ class AssetCompilerTests(unittest.TestCase):
         self.run_assetc(str(self.output), ok=False)
         self.assertEqual(original, self.output.read_bytes())
 
+    def test_quarantine_marker_refuses_pack_even_on_cache_hit(self):
+        self.run_assetc()
+        original = self.output.read_bytes()
+        self.assertIn('skipping', self.run_assetc().stdout)
+        marker = self.assets / '.asset-pipeline-quarantine.json'
+        marker.write_text('{"approved":false}')
+        self.assertIn('unreviewed', self.run_assetc(ok=False).stderr)
+        self.assertEqual(original, self.output.read_bytes())
+        marker.unlink()
+        nested = self.assets / 'generated' / 'candidates'
+        nested.mkdir(parents=True)
+        (nested / '.asset-pipeline-quarantine.json').write_text('{"approved":false}')
+        (nested / 'candidate-001.png').write_bytes(b'not-for-release')
+        self.assertIn('unreviewed', self.run_assetc(ok=False).stderr)
+        self.assertEqual(original, self.output.read_bytes())
+
     def test_empty_tree_cache(self):
         for file in self.assets.iterdir():
             file.unlink()

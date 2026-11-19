@@ -1,0 +1,47 @@
+name: Generation candidate safety
+
+on:
+  pull_request:
+    paths:
+      - 'tools/assetgenerate.py'
+      - 'tools/assetc/main.cpp'
+      - 'tests/test_assetgenerate.py'
+      - 'tests/test_assetc.py'
+      - 'tests/CMakeLists.txt'
+      - '.github/workflows/generation-candidates.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/assetgenerate.py'
+      - 'tools/assetc/main.cpp'
+      - 'tests/test_assetgenerate.py'
+      - 'tests/test_assetc.py'
+      - '.github/workflows/generation-candidates.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-generation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test provider contract, generation budgets and quarantine
+        run: python3 -m unittest discover -s tests -p 'test_assetgenerate.py' -v
+      - name: Python compile check
+        run: python3 -m py_compile tools/assetgenerate.py tests/test_assetgenerate.py
+
+  packer-quarantine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install C++ build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+      - name: Configure standalone packer
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DASSET_PIPELINE_WITH_ZSTD=OFF
+      - name: Build C++ asset compiler
+        run: cmake --build build --target assetc -j 4
+      - name: Test asset compiler, including quarantine rejection
+        run: ctest --test-dir build --output-on-failure -R '^assetc_regressions$'
