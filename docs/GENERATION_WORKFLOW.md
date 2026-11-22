@@ -112,6 +112,8 @@ See [candidate visual review](CANDIDATE_REVIEW.md) for the optional contact-shee
   `openai-images` adapter. Additional providers need separate backend, budget,
   security and rights review; never dynamically import arbitrary modules from
   untrusted JSON specifications.
-- Add candidate contact-sheet previews and selection UX while keeping manual approval and rights review.
+- The optional `candidate_review.py` contact-sheet preview already exists.
+  Further review/selection UX may be improved, but must preserve manual
+  artwork approval and independent rights review.
 - The renderer and shipping games stay independent of provider SDKs, model credentials, Python and network inference.
 - Platformer end-to-end pack-and-render acceptance remains tracked in issue #3; SimGame culture/biome visual catalogs remain tracked in issue #4.
