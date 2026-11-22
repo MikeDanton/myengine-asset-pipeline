@@ -1,13 +1,20 @@
 # CI & Release Checklist
 
-Last edited: 2026-11-14. Last reviewed: 2026-11-14 (Linux validation below).
+Last edited: 2026-11-22. Last reviewed: 2026-11-22 (source CMake guard, Git tag/release metadata and workflows; no new native build).
 
-This document describes recommended CI jobs and a release checklist for the Asset Pack Pipeline project.
+This is a **recommended/manual release verification checklist**, not a
+statement that every check below is implemented as an automatic PR gate.
+Current source admission is **Clang/AppleClang only** (`CMakeLists.txt` rejects
+GCC and MSVC). The existing GitHub Actions workflows are mostly path-scoped
+asset-source, atlas, candidate and image-provider contract checks; they are
+not a substitute for a full C++ build, sanitizer, installed-consumer and
+release validation. A `v1.1.0` tag exists, but no GitHub Release entry was
+published at the 2026-11-22 audit. This document does **not** publish one.
 
 ## Recommended CI jobs
 
-1. Build (Release) for supported compilers
-   - `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
+1. Build (Release) with a supported Clang toolchain
+   - `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++`
    - `cmake --build build -j`
 
 2. Unit tests
@@ -30,8 +37,13 @@ This document describes recommended CI jobs and a release checklist for the Asse
 
 1. Update `CMakeLists.txt` project `VERSION` and tag accordingly (semantic versioning recommended).
 2. If you make wire-format changes, increment the `format_version` constant in `include/pak_format.h` and document the change in `docs/PAK_FORMAT.md` and `CHANGELOG.md`.
-3. Run full CI (build, tests, clang-tidy, ASan) and fix any regressions.
-4. Create a signed tag and GitHub release with release notes and CHANGELOG entry.
+3. Execute the complete relevant **release validation matrix** (Clang build,
+   tests, clang-tidy, ASan, installed consumer and integration as applicable),
+   running the non-automated checks explicitly and recording their outcomes.
+   A green path-scoped GitHub Actions result alone does not certify this matrix.
+4. After the required owner publication approval, create the intended tag
+   and a **separate GitHub Release** with release notes and CHANGELOG entry;
+   do not describe a tag alone as a published GitHub Release.
 5. Optionally publish release artifacts (archives) with prebuilt binaries for common platforms.
 6. Update documentation and examples in `README.md` if any API or usage has changed.
 
