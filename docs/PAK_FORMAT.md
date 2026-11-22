@@ -43,8 +43,8 @@ Each v1 TOC entry is a fixed-size **64-byte packed** `PakTocEntryWire` with:
 - `compression` (uint8) — `0 = None`, `1 = Zstd` (other values reserved).
 - `reserved0[3]` immediately after compression, and `reserved1[4]` at the end; all are included in the 64-byte serialized entry.
 - `data_offset` (uint64) — offset to the stored bytes for this asset.
-- `raw_size` (uint64) — uncompressed size (0 for empty asset).
-- `stored_size` (uint64) — stored size (after compression if compressed).
+- `stored_size` (uint64) — stored size (after compression if compressed), at bytes 28–35 of the TOC entry.
+- `raw_size` (uint64) — uncompressed size (0 for empty asset), at bytes 36–43.
 - `content_hash` (16 bytes) — BLAKE3-128 of the raw (uncompressed) bytes.
 
 TOC entries are serialized using the explicit one-byte-packed wire structs.
@@ -71,9 +71,10 @@ IDs and supported compression values even when hashing is disabled; with
 
 ## Endianness & portability
 
-- All integer fields are written little-endian. Readers on big-endian platforms
-  must convert accordingly (the included implementation assumes little-endian
-  hosts; if you need big-endian support add conversion helpers).
+- The v1 wire contract requires little-endian integers. The included C++
+  reader/writer use packed native-memory structs and assume a little-endian
+  host; they do **not** perform cross-endian conversion. Big-endian support
+  needs explicit encoding/decoding code and compatibility tests.
 - The current v1 reader requires **exactly** 64-byte header and TOC entries.
   `toc_entry_size` is validated, not used to skip unknown trailing fields.
 
@@ -110,6 +111,8 @@ See `include/asset_runtime.h` for exact types and `src/pak_reader.cpp` /
   The reader verifies it by default and can disable just the digest check via
   `PakMount::Open(..., verify_toc_hash=false)`; mandatory structural checks
   still apply.
-- Keep `format_version` increments minimal and append-only for structs where
-  possible to remain forwards-compatible.
+- Treat any changed field order, size, meaning or additional wire field as a
+  versioned format change. Update both writer and reader with explicit
+  compatibility/rejection rules and tests; append-only edits to v1 structs
+  are **not** accepted by the current reader.
 
