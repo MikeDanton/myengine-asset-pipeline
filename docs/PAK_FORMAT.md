@@ -1,50 +1,57 @@
 # .pak Wire Format
 
-This document describes the on-disk `.pak` wire format used by the asset pipeline.
-It is intentionally simple and versioned to allow forward/backward compatibility.
+This document describes the implemented **version 1** on-disk `.pak` wire format
+used by the asset pipeline. Reviewed against `include/pak_format.h`,
+`src/pak_writer.cpp` and `src/pak_reader.cpp` on 2026-11-22. It is versioned,
+but **the current reader rejects unknown versions and struct sizes**; no
+forward/backward compatibility beyond the implemented v1 contract is implied.
 
 ## High-level layout
 
 File layout (all multi-byte integer fields are little-endian):
 
-- PakHeader (fixed-size header)
-- Blob data (one or more asset blobs, stored back-to-back)
-- TOC (table-of-contents) raw bytes
+- `PakHeaderWire` (exactly 64 bytes)
+- Blob data (zero or more stored asset blobs, written back-to-back)
+- `PakTocEntryWire` array (exactly 64 bytes per entry)
 
 The header contains offsets and sizes that point to the TOC and version info.
 
 ## PakHeader (C representation)
 
-See `include/pak_format.h` for the precise C++ struct. Key fields:
+See `include/pak_format.h` for the packed `PakHeaderWire` definition.
+The v1 header is **64 bytes** and currently contains:
 
-- `magic[8]` — ASCII magic (`"PACKPIPE"` or similar) to identify the file.
-- `format_version` (uint32) — format version. Readers must check this.
-- `header_size` (uint32) — size of the header in bytes (allows future header growth).
-- `toc_offset` (uint64) — file offset where the TOC begins (0 if no TOC).
-- `toc_count` (uint32) — number of TOC entries.
-- `toc_entry_size` (uint32) — size of a TOC entry on-disk (useful for forward compatibility).
-- `toc_hash` (16 bytes) — BLAKE3-128 of the raw TOC bytes (zero when not present).
+- `magic[8]` — exactly `MYPAK` followed by bytes `00 00 01` (`PAK_MAGIC`), **not** an arbitrary ASCII identifier.
+- `format_version` (uint32) — exactly `1` (`PAK_FORMAT_VERSION`).
+- `header_size` (uint32) — exactly `64`, checked by the reader.
+- `toc_offset` (uint64) — file offset of the TOC; at least 64 even for an empty pack. A temporary zero during writing is a placeholder, not a valid finalized pack.
+- `toc_count` (uint32) — number of TOC entries; zero is supported.
+- `toc_entry_size` (uint32) — exactly `64`, checked by the reader.
+- `toc_hash` (16 bytes) — BLAKE3-128 of the raw TOC bytes. The writer computes it even for an empty TOC.
+- `reserved[16]` — reserved bytes, zero-filled by the current writer.
 
 All fields are stored in little-endian.
 
 ## TOC entry (PakTocEntryWire)
 
-Each TOC entry is a fixed-size, packed struct with the following important fields:
+Each v1 TOC entry is a fixed-size **64-byte packed** `PakTocEntryWire` with:
 
 - `id` (uint64) — AssetId computed as `XxHash64(canonical_key)`.
 - `type` (uint16) — Asset type identifier (project-defined enum).
 - `type_version` (uint16) — Version of the type layout.
-- `flags` (uint16) — Bitflags for asset-specific properties.
+- `flags` (uint32) — `TocFlags` bitfield (`Encrypted`, `Streamable`, or zero); bit width is **32**, not 16.
 - `compression` (uint8) — `0 = None`, `1 = Zstd` (other values reserved).
-- `reserved` / padding to align fields as defined in `pak_format.h`.
+- `reserved0[3]` immediately after compression, and `reserved1[4]` at the end; all are included in the 64-byte serialized entry.
 - `data_offset` (uint64) — offset to the stored bytes for this asset.
 - `raw_size` (uint64) — uncompressed size (0 for empty asset).
 - `stored_size` (uint64) — stored size (after compression if compressed).
 - `content_hash` (16 bytes) — BLAKE3-128 of the raw (uncompressed) bytes.
 
-TOC entries are serialized as raw bytes using the platform packing defined in
-`pak_format.h`. The reader recomputes the `toc_hash` over the concatenated raw
-TOC entry bytes and compares to `header.toc_hash` when `verify_toc_hash` is requested.
+TOC entries are serialized using the explicit one-byte-packed wire structs.
+The writer computes the hash over the concatenated 64-byte entries. The
+reader checks all header/entry sizes, TOC offsets, payload bounds, duplicate
+IDs and supported compression values even when hashing is disabled; with
+`verify_toc_hash=true` it also recomputes and compares the TOC digest.
 
 ## Hashing and identity
 
@@ -67,15 +74,16 @@ TOC entry bytes and compares to `header.toc_hash` when `verify_toc_hash` is requ
 - All integer fields are written little-endian. Readers on big-endian platforms
   must convert accordingly (the included implementation assumes little-endian
   hosts; if you need big-endian support add conversion helpers).
-- TOC layout is fixed per `format_version`. `toc_entry_size` allows readers to
-  skip unknown trailing bytes in each entry (forward-compatibility).
+- The current v1 reader requires **exactly** 64-byte header and TOC entries.
+  `toc_entry_size` is validated, not used to skip unknown trailing fields.
 
 ## Versioning
 
-- `format_version` in the header indicates the wire-format version. The reader
-  should fail if the version is unknown/unsupported.
-- New fields should be appended at the end of structs and `header_size`/
-  `toc_entry_size` updated accordingly to preserve compatibility.
+- The current reader requires `format_version == 1`. Any unknown version,
+  header size or TOC-entry size is rejected, not migrated or ignored.
+- Any incompatible field change needs a **new format version** and an explicit
+  matching reader/writer compatibility decision and tests. Simply appending
+  fields or enlarging the structs is not accepted by today's reader.
 
 ## Example layout
 
@@ -98,10 +106,10 @@ See `include/asset_runtime.h` for exact types and `src/pak_reader.cpp` /
 ## Notes and recommendations
 
 - Writer should compute and store canonical keys and use `XxHash64` consistently.
-- Writers should optionally write `toc_hash` and readers should verify it when
-  requested to protect against TOC corruption.
+- The current writer **always records** `toc_hash`, including for empty TOCs.
+  The reader verifies it by default and can disable just the digest check via
+  `PakMount::Open(..., verify_toc_hash=false)`; mandatory structural checks
+  still apply.
 - Keep `format_version` increments minimal and append-only for structs where
   possible to remain forwards-compatible.
 
-If you want, I can also generate a small binary inspector utility that prints
-out header and TOC contents for debugging `.pak` files.
