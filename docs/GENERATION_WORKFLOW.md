@@ -1,6 +1,8 @@
 # Generation candidates and quarantine (v1)
 
-Last edited: 2026-11-19. This is an **authoring** interface, not runtime inference.
+Last edited: 2026-11-22. This is an **authoring** interface, not runtime inference.
+Current provider availability reviewed against `tools/assetgenerate.py` and
+[the real-asset guide](CREATING_REAL_ASSETS.md); no paid request or new image generation was run.
 
 The existing tools have three distinct duties:
 
@@ -19,7 +21,19 @@ assetprep.py -> approved/ + external provenance
 atlasprep.py (optional) -> pack-ready/ -> assetc -> game.pak
 ```
 
-**The deterministic offline mock is the default. An optional, explicitly paid OpenAI Images provider is also available.** It produces obviously synthetic checkerboard PNGs to exercise the provider contract and costs $0. The mock never makes network calls. The paid provider requires an explicit CLI flag and OPENAI_API_KEY, and makes only one request without retries. See [real assets](CREATING_REAL_ASSETS.md). Real provider adapters can implement `GenerationProvider` but should not be registered until separately reviewed, budgeted, tested, and configured.
+**The deterministic offline mock is the default.** It produces synthetic
+checkerboard PNGs for contract tests without network calls or cost.
+An **existing, optional** `openai-images` provider can make an explicit
+billable API request, but **not** from a JSON provider name alone: its caller
+must separately supply `--allow-paid-generation`, `OPENAI_API_KEY`, a supported
+model, a single 1024×1024 candidate and an unsupported/replay seed of `0`.
+The current adapter makes one request without retries. The request budget is
+a **preflight allowance, not a guaranteed billing cap**, and API charges are
+separate from ChatGPT. See [real assets and payment safeguards](CREATING_REAL_ASSETS.md)
+before considering it; this offline workflow example does **not** invoke it.
+Other real providers remain unregistered until independently approved,
+budgeted and tested. Both providers only create **quarantined candidates**,
+never approved game artwork.
 
 ## Generate a test candidate batch
 
@@ -93,7 +107,10 @@ See [candidate visual review](CANDIDATE_REVIEW.md) for the optional contact-shee
 
 ## Scope and next work
 
-- Add a real provider adapter only when an explicit backend and budget are selected; never dynamically import an arbitrary module named in an untrusted JSON spec.
+- The one currently registered real-provider route is the explicitly gated
+  `openai-images` adapter. Additional providers need separate backend, budget,
+  security and rights review; never dynamically import arbitrary modules from
+  untrusted JSON specifications.
 - Add candidate contact-sheet previews and selection UX while keeping manual approval and rights review.
 - The renderer and shipping games stay independent of provider SDKs, model credentials, Python and network inference.
 - Platformer end-to-end pack-and-render acceptance remains tracked in issue #3; SimGame culture/biome visual catalogs remain tracked in issue #4.
