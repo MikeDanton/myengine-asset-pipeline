@@ -1,24 +1,30 @@
 # Asset Pack Pipeline
 
-Last edited: 2026-11-19. Last reviewed: 2026-11-14 (C++ packer and engine integration).
+Last edited: 2026-11-22. Last reviewed: 2026-11-14 (C++ packer and engine integration).
 
 This repository is the source of truth for `asset_runtime` and `assetc`. MyEngine2
 consumes this checkout through `add_subdirectory`; make library changes here,
 run its tests here, and commit them here. Do not maintain another source copy in
-the engine. The last published release is v1.1.0; the changes below are unreleased.
+the engine. The latest version **tag** is `v1.1.0`. GitHub Releases has no
+published release entry as of this review (2026-11-22), and the changes
+below are unreleased; a tag is not by itself a release announcement.
 
 GPT/Codex contributors follow the [branch lifecycle policy](docs/guides/branch_lifecycle.md) and [merge-on-green and PR ownership policy](docs/CONTINUOUS_INTEGRATION_PR_OWNERSHIP.md). CI-green low-risk PRs can be integrated by their author; new artwork, source rights, paid generation, and release decisions remain human-gated.
 
 ## Build and test
 
-Requires CMake 3.24+, a C++20 compiler and Git. xxHash v0.8.1 and the tested BLAKE3
+Requires CMake 3.24+, Ninja (for the shown command), Git and a **Clang C++20
+compiler** (`clang++`; AppleClang is also accepted by the CMake guard).
+The current top-level CMake deliberately rejects GCC and MSVC, even if they
+support C++20; use a fresh build directory when changing toolchains.
+xxHash v0.8.1 and the tested BLAKE3
 revision are pinned through FetchContent. Initial configuration needs network
 access or existing `FETCHCONTENT_SOURCE_DIR_XXHASH` / `_BLAKE3` source overrides.
 System zstd development headers/library are detected automatically; no zstd
 source is downloaded. Set `ASSET_PIPELINE_WITH_ZSTD=OFF` to test without compression.
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
 cmake --build build -j 4
 ctest --test-dir build --output-on-failure -j 4
 ```
