@@ -26,7 +26,8 @@ checkerboard PNGs for contract tests without network calls or cost.
 An **existing, optional** `openai-images` provider can make an explicit
 billable API request, but **not** from a JSON provider name alone: its caller
 must separately supply `--allow-paid-generation`, `OPENAI_API_KEY`, a supported
-model, a single 1024×1024 candidate and an unsupported/replay seed of `0`.
+model, a single 1024×1024 candidate and a request `seed` of `0` (the live API
+cannot reproduce a seeded image; returned receipts use `seed: null`).
 The current adapter makes one request without retries. The request budget is
 a **preflight allowance, not a guaranteed billing cap**, and API charges are
 separate from ChatGPT. See [real assets and payment safeguards](CREATING_REAL_ASSETS.md)
@@ -107,7 +108,7 @@ See [candidate visual review](CANDIDATE_REVIEW.md) for the optional contact-shee
 
 ## Scope and next work
 
-- The one currently registered real-provider route is the explicitly gated
+- The one currently available real-provider route is the explicitly gated
   `openai-images` adapter. Additional providers need separate backend, budget,
   security and rights review; never dynamically import arbitrary modules from
   untrusted JSON specifications.
