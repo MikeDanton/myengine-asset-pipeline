@@ -5,6 +5,8 @@ on:
     paths:
       - 'tools/assetgenerate.py'
       - 'tools/assetc/main.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/generation-candidates.yml'
       - 'tests/test_assetgenerate.py'
       - 'tests/test_assetc.py'
       - 'tests/CMakeLists.txt'
@@ -39,8 +41,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify bundled C++ build tools
         run: cmake --version && ninja --version
-      - name: Configure standalone packer
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DASSET_PIPELINE_WITH_ZSTD=OFF
+      - name: Configure standalone packer with Clang
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DASSET_PIPELINE_WITH_ZSTD=OFF
       - name: Build C++ asset compiler
         run: cmake --build build --target assetc -j 4
       - name: Test asset compiler, including quarantine rejection
