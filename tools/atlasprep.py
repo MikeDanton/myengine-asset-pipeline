@@ -14,6 +14,8 @@ import shutil
 import sys
 import tempfile
 
+from assetprep import AssetPrepError, relative_path as validated_relative_path
+
 try:
     from PIL import Image, UnidentifiedImageError
 except ImportError:
@@ -31,11 +33,11 @@ class AtlasError(ValueError):
 
 
 def logical_path(value):
-    if (not isinstance(value, str) or not value or value.startswith("/") or
-            "\\" in value or ":" in value or any(ord(c) < 32 for c in value) or
-            any(part in ("", ".", "..") for part in value.split("/"))):
-        raise AtlasError(f"unsafe asset key: {value!r}")
-    return Path(*value.split("/"))
+    # Use the same safety contract as assetprep's canonical asset keys.
+    try:
+        return validated_relative_path(value)
+    except AssetPrepError as exc:
+        raise AtlasError(f"unsafe asset key: {value!r}") from exc
 
 
 def integer(value, name, minimum=1, maximum=MAX_ATLAS_DIMENSION):

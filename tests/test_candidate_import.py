@@ -97,7 +97,9 @@ class ExternalImageImportTests(unittest.TestCase):
 
     def test_rejects_parent_paths_and_case_collisions(self):
         for path in ("../secret.png", "/etc/hosts", "art\\gate-stone.png",
-                     "art/../secret.png", "art/not-a-png.jpeg"):
+                     "art/../secret.png", "art//gate-stone.png",
+                     "art/./gate-stone.png", "art/\x01gate-stone.png",
+                     "art/not-a-png.jpeg", "a" * 509 + ".png"):
             with self.subTest(path=path):
                 self.manifest["candidates"] = [{"file": path}]
                 self.run_cli(ok=False)

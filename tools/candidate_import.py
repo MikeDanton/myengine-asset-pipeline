@@ -15,7 +15,7 @@ import shutil
 import sys
 import tempfile
 
-from assetprep import AssetPrepError, inspect_png
+from assetprep import AssetPrepError, inspect_png, relative_path as validated_relative_path
 
 QUARANTINE_MARKER = ".asset-pipeline-quarantine.json"
 MAX_SPEC_BYTES = 65536
@@ -29,12 +29,14 @@ class ImportError_(ValueError):
 
 
 def relative_path(value):
-    if (not isinstance(value, str) or not value or len(value) > 512 or
-            value.startswith("/") or "\\" in value or ":" in value or
-            any(ord(ch) < 32 for ch in value) or
-            any(part in ("", ".", "..") for part in value.split("/"))):
+    # The importer keeps its stricter size bound; all POSIX path safety rules
+    # are owned by the same validator used for approved asset staging.
+    if isinstance(value, str) and len(value) > 512:
         raise ImportError_(f"invalid candidate source path: {value!r}")
-    return Path(*value.split("/"))
+    try:
+        return validated_relative_path(value)
+    except AssetPrepError as exc:
+        raise ImportError_(f"invalid candidate source path: {value!r}") from exc
 
 
 def required_text(value, label):

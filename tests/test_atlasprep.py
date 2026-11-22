@@ -99,8 +99,12 @@ class AtlasPrepTests(unittest.TestCase):
         self.layout["sprites"].append(dict(self.layout["sprites"][0], id="TORCH_IDLE"))
         self.run_tool(ok=False)
         self.layout["sprites"].pop()
-        self.layout["sprites"][0]["source_key"] = "../outside.png"
-        self.run_tool(ok=False)
+        for unsafe in ("../outside.png", "sprites//torch.png",
+                       "sprites/./torch.png", "sprites\\torch.png",
+                       "sprites/\x01torch.png", "/absolute/torch.png"):
+            with self.subTest(key=unsafe):
+                self.layout["sprites"][0]["source_key"] = unsafe
+                self.run_tool(ok=False)
         self.layout["sprites"][0]["source_key"] = "sprites/torch.png"
         self.layout["atlas_key"] = "sprites/torch.png"
         self.run_tool(ok=False)
