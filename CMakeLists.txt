@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.24)
 project(myengine_asset_pipeline VERSION 1.1.0 LANGUAGES CXX C)
 
+# This repository is consumed by Clang-only MyEngine2. Restrict standalone
+# configurations too, with one obvious CMake guard to relax if GCC support
+# is validated later. C sources still use the selected C compiler normally.
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Clang|AppleClang)$")
+  message(FATAL_ERROR
+    "myengine-asset-pipeline supports Clang only (detected ${CMAKE_CXX_COMPILER_ID}). "
+    "Configure with -DCMAKE_CXX_COMPILER=clang++ in a fresh build directory.")
+endif()
+
 option(ENABLE_WERROR "Treat project warnings as errors" ON)
 option(ENABLE_CLANG_TIDY "Run clang-tidy on project C++ targets" OFF)
 option(ASSET_PIPELINE_BUILD_TESTS "Build asset pipeline tests" ${PROJECT_IS_TOP_LEVEL})
