@@ -63,3 +63,25 @@ jobs:
         run: cmake --build build --parallel 4
       - name: Test pak runtime and asset compiler quarantine contracts
         run: ctest --test-dir build --output-on-failure --parallel 4 -R '^(pak_.*|assetc_regressions)$'
+
+      # Preserve the zstd-off checks above: they verify unsupported
+      # compression is rejected rather than accidentally emitted.
+      - name: Ensure Zstd development headers are installed
+        run: |
+          if ! dpkg -s libzstd-dev >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends libzstd-dev
+          fi
+      - name: Configure Clang pak tests with Zstd enabled
+        run: |
+          cmake -S . -B build-zstd -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DASSET_PIPELINE_WITH_ZSTD=ON
+      - name: Build Zstd-enabled C++ pak tests
+        run: cmake --build build-zstd --parallel 4
+      - name: Require and run compressed pak and assetc regressions
+        run: |
+          # A CMake option alone permits an absent optional library.
+          # Ensure the Zstd-specific test was actually registered.
+          ctest --test-dir build-zstd --show-only -R '^pak_roundtrip_zstd' | grep -F 'Total Tests: 1'
+          ctest --test-dir build-zstd --output-on-failure --parallel 4 -R '^(pak_.*|assetc_regressions)$'
