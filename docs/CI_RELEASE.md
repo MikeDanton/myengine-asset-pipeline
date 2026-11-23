@@ -1,14 +1,16 @@
 # CI & Release Checklist
 
-Last edited: 2026-11-22. Last reviewed: 2026-11-22 (source CMake guard, Git tag/release metadata and workflows; no new native build).
+Last edited: 2026-11-23. Last reviewed: 2026-11-23 (source CMake guard, Git tag/release metadata and hosted CI workflow scope; no local native build).
 
 This is a **recommended/manual release verification checklist**, not a
 statement that every check below is implemented as an automatic PR gate.
 Current source admission is **Clang/AppleClang only** (`CMakeLists.txt` rejects
-GCC and MSVC). The existing GitHub Actions workflows are mostly path-scoped
-asset-source, atlas, candidate and image-provider contract checks; they are
-not a substitute for a full C++ build, sanitizer, installed-consumer and
-release validation. A `v1.1.0` tag exists, but no GitHub Release entry was
+GCC and MSVC). The path-scoped GitHub Actions workflows check asset-source,
+atlas, candidate and image-provider contracts. Relevant C++/CMake changes also
+trigger Clang pak/runtime tests with Zstd disabled and enabled (10 and 11 CTests),
+plus a Zstd-enabled Clang **ASan + UBSan** lane (11 CTests). These checks are
+not a substitute for the complete release, installed-consumer, downstream
+integration and sanitizer-configuration validation matrix. A `v1.1.0` tag exists, but no GitHub Release entry was
 published at the 2026-11-22 audit. This document does **not** publish one.
 
 ## Recommended CI jobs
@@ -24,8 +26,13 @@ published at the 2026-11-22 audit. This document does **not** publish one.
    - Configure `-DENABLE_CLANG_TIDY=ON` and run a `build-tidy` build to collect warnings.
    - Supply project-specific filters/checks in `.clang-tidy` or the invocation when needed.
 
-4. AddressSanitizer (ASan) run
-   - Configure an ASan build (e.g. `-DCMAKE_CXX_FLAGS=-fsanitize=address -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address`) or use a dedicated `build-asan` profile.
+4. AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan)
+   - For C++/CMake changes, `.github/workflows/pak-sanitizers.yml` now runs a
+     Zstd-enabled Clang Debug build with ASan, UBSan, leak detection and the
+     11 pak/runtime/packer CTests on GitHub-hosted Ubuntu.
+   - For releases, explicitly validate any additional required compiler,
+     configuration, dependency and installed-consumer sanitizer combinations.
+     The path-scoped CI result is not a complete sanitizer certification.
    - Build and run tests under ASan to detect runtime memory issues.
 
 5. Optional: Memory sanitizer, UBSan, or MSAN jobs for more coverage.
