@@ -31,8 +31,14 @@ Thumbs.db
 /tests/*.pak
 *.log
 
+## Python test and local environment artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+
 ## CLion specific
-.idea/
 *.iml
 
 ## Misc
