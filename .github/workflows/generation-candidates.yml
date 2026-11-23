@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Test provider contract, generation budgets and quarantine
         run: python3 -m unittest discover -s tests -p 'test_assetgenerate.py' -v
       - name: Python compile check
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify bundled C++ build tools
         run: cmake --version && ninja --version
       - name: Configure standalone packer with Clang
