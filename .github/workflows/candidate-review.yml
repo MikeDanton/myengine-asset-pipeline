@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'tools/candidate_review.py'
+      - 'tools/assetgenerate.py'
+      - 'tools/assetprep.py'
       - 'tools/candidate_import.py'
       - 'tests/test_candidate_review.py'
       - 'tests/test_candidate_import.py'
@@ -14,6 +16,8 @@ on:
     branches: [main]
     paths:
       - 'tools/candidate_review.py'
+      - 'tools/assetgenerate.py'
+      - 'tools/assetprep.py'
       - 'tools/candidate_import.py'
       - 'tests/test_candidate_review.py'
       - 'tests/test_candidate_import.py'
