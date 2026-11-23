@@ -14,6 +14,7 @@ on:
       - '.github/workflows/generation-candidates.yml'
       - 'tests/test_assetgenerate.py'
       - 'tests/test_assetc.py'
+      - 'tests/*.cpp'
       - 'tests/CMakeLists.txt'
   push:
     branches: [main]
@@ -28,6 +29,7 @@ on:
       - 'CMakeLists.txt'
       - 'tests/test_assetgenerate.py'
       - 'tests/test_assetc.py'
+      - 'tests/*.cpp'
       - 'tests/CMakeLists.txt'
       - '.github/workflows/generation-candidates.yml'
 
@@ -57,7 +59,7 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
             -DASSET_PIPELINE_WITH_ZSTD=OFF
-      - name: Build C++ asset compiler
-        run: cmake --build build --target assetc -j 4
-      - name: Test asset compiler, including quarantine rejection
-        run: ctest --test-dir build --output-on-failure -R '^assetc_regressions$'
+      - name: Build C++ asset compiler and pak runtime tests
+        run: cmake --build build --parallel 4
+      - name: Test pak runtime and asset compiler quarantine contracts
+        run: ctest --test-dir build --output-on-failure --parallel 4 -R '^(pak_.*|assetc_regressions)$'
