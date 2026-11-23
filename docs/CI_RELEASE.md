@@ -10,7 +10,8 @@ atlas, candidate and image-provider contracts. Relevant C++/CMake changes also
 trigger Clang pak/runtime tests with Zstd disabled and enabled (10 and 11 CTests),
 plus a Zstd-enabled Clang **ASan + UBSan** lane (11 CTests). These checks are
 not a substitute for the complete release, installed-consumer, downstream
-integration and sanitizer-configuration validation matrix. A `v1.1.0` tag exists, but no GitHub Release entry was
+integration and sanitizer-configuration validation matrix. A `v1.1.0` tag
+exists, but no GitHub Release entry was
 published at the 2026-11-22 audit. This document does **not** publish one.
 
 ## Recommended CI jobs
@@ -33,9 +34,8 @@ published at the 2026-11-22 audit. This document does **not** publish one.
    - For releases, explicitly validate any additional required compiler,
      configuration, dependency and installed-consumer sanitizer combinations.
      The path-scoped CI result is not a complete sanitizer certification.
-   - Build and run tests under ASan to detect runtime memory issues.
 
-5. Optional: Memory sanitizer, UBSan, or MSAN jobs for more coverage.
+5. Optional: MemorySanitizer (MSan), other sanitizer configurations and additional platforms for more coverage.
 
 6. Packaging job
    - Build and `cmake --install` to a temporary prefix and verify `find_package` works from that prefix.
