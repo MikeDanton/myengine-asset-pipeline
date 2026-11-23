@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'tools/atlasprep.py'
+      - 'tools/assetprep.py'
       - 'tests/test_atlasprep.py'
       - 'docs/ATLAS_WORKFLOW.md'
       - '.github/workflows/atlas-prep.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'tools/atlasprep.py'
+      - 'tools/assetprep.py'
       - 'tests/test_atlasprep.py'
       - '.github/workflows/atlas-prep.yml'
 
