@@ -15,8 +15,10 @@ on:
     paths:
       - 'tools/assetgenerate.py'
       - 'tools/assetc/main.cpp'
+      - 'CMakeLists.txt'
       - 'tests/test_assetgenerate.py'
       - 'tests/test_assetc.py'
+      - 'tests/CMakeLists.txt'
       - '.github/workflows/generation-candidates.yml'
 
 permissions:
