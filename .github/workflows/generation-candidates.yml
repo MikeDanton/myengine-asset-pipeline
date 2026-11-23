@@ -62,4 +62,4 @@ jobs:
       - name: Build C++ asset compiler and pak runtime tests
         run: cmake --build build --parallel 4
       - name: Test pak runtime and asset compiler quarantine contracts
-        run: ctest --test-dir build --output-on-failure --parallel 4 -R '^(pak_.*|assetc_regressions)
+        run: ctest --test-dir build --output-on-failure --parallel 4 -R '^(pak_.*|assetc_regressions)$'
