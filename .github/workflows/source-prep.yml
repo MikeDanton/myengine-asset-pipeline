@@ -20,6 +20,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check source import regression contracts
         run: python3 -m unittest discover -s tests -p test_assetprep.py -v
