@@ -1,0 +1,62 @@
+name: Pak runtime sanitizers
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'tools/assetc/**'
+      - 'tests/*.cpp'
+      - 'tests/test_assetc.py'
+      - 'tests/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - '.github/workflows/pak-sanitizers.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'tools/assetc/**'
+      - 'tests/*.cpp'
+      - 'tests/test_assetc.py'
+      - 'tests/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - '.github/workflows/pak-sanitizers.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pak-asan-ubsan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check hosted Clang and Ninja tools
+        run: clang++ --version && cmake --version && ninja --version
+      - name: Ensure Zstd development headers are installed
+        run: |
+          if ! dpkg -s libzstd-dev >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends libzstd-dev
+          fi
+      - name: Configure Zstd-enabled Clang ASan and UBSan build
+        run: |
+          cmake -S . -B build-sanitizers -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DASSET_PIPELINE_WITH_ZSTD=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build instrumented runtime, packer and tests
+        run: cmake --build build-sanitizers --parallel 4
+      - name: Require compressed pak test and run sanitizer regressions
+        run: |
+          set -euo pipefail
+          ctest --test-dir build-sanitizers --show-only -R '^pak_roundtrip_zstd$' | grep -F 'Total Tests: 1'
+          ctest --test-dir build-sanitizers --output-on-failure --parallel 2 -R '^(pak_.*|assetc_regressions)$'
