@@ -4,7 +4,7 @@ Read [README.md](README.md), [branch lifecycle](docs/guides/branch_lifecycle.md)
 
 ## Progress reports and task handoff (required)
 
-End every substantive update with owning issue/PR and exact tested head, exact validation result, direct current CI run/job links when applicable (otherwise explicitly say why none exists), next step/owner, and **Human action/decision required: None / Action / Decision** with specifics as needed. For private platformer, report local test commands and exact-head results instead of CI; do not run CI for reporting purposes. Never substitute historical checks or a green badge for current validation.
+End every substantive update with owning issue/PR and exact tested head, exact validation result, direct current CI run/job links when applicable (otherwise explicitly say why none exists), next step/owner, and **Human action/decision required: None / Action / Decision** with specifics as needed. Do not run CI solely to provide a report link. Never substitute historical checks or a green badge for current validation.
 
 **PR status (required):** In every substantive report footer, include a separate `PR status:` line for each relevant PR, with its link and a colored emoji plus explicit text. Verify GitHub's current state; do not infer merge from green CI. Use:
 
