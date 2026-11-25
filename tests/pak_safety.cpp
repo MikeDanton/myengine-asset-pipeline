@@ -64,6 +64,48 @@ int main() {
     if (!WritePak(file, {})) return 8;
     if (!PakMount::Open(file, error, true)) return 9;
 #if ASSET_HAS_ZSTD
+    // A caller may reuse a larger buffer. Valid loads and malformed compressed
+    // frames must both preserve the suffix beyond the declared raw size.
+    PakWriterEntry bounded;
+    bounded.canonical_key = "bounded";
+    bounded.compression = pak::Compression::Zstd;
+    bounded.bytes = {1, 2, 3, 4};
+    if (!WritePak(file, {bounded})) return 20;
+    const auto boundedId = XxHash64("bounded");
+    mount = PakMount::Open(file, error, true);
+    if (!mount) return 21;
+    constexpr uint8_t canary = 0xA5;
+    std::vector<uint8_t> oversized(8, canary);
+    auto count = mount->LoadTo(boundedId, oversized, nullptr, error, true);
+    if (!count || *count != bounded.bytes.size() || error != AssetError::Ok) return 22;
+    for (size_t i = 0; i < oversized.size(); ++i) {
+        const auto expected = i < bounded.bytes.size() ? bounded.bytes[i] : canary;
+        if (oversized[i] != expected) return 23;
+    }
+    mount.reset();
+    // Underdeclare the raw size without modifying the compressed frame.
+    {
+        std::fstream stream(file, std::ios::binary | std::ios::in | std::ios::out);
+        pak::PakHeaderWire header{};
+        pak::PakTocEntryWire toc{};
+        if (!util::read_struct(stream, header)) return 24;
+        stream.seekg(static_cast<std::streamoff>(header.toc_offset));
+        if (!util::read_struct(stream, toc)) return 25;
+        toc.raw_size = 2;
+        stream.seekp(static_cast<std::streamoff>(header.toc_offset));
+        util::write_struct(stream, toc);
+        stream.close();
+        if (!stream) return 26;
+    }
+    mount = PakMount::Open(file, error, false);
+    if (!mount) return 27;
+    oversized.assign(8, canary);
+    count = mount->LoadTo(boundedId, oversized, nullptr, error, false);
+    if (count || error != AssetError::DecompressFailed) return 28;
+    for (size_t i = 2; i < oversized.size(); ++i) {
+        if (oversized[i] != canary) return 29;
+    }
+
     std::vector<uint8_t> compressed;
     std::string text(10000, 'x');
     if (!CompressZstd(text.data(), text.size(), compressed)) return 10;

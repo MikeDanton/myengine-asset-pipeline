@@ -230,7 +230,10 @@ std::optional<std::size_t> PakMount::LoadTo(AssetId id,
         // buffer using zstd streaming API to avoid allocating a large
         // temporary buffer for the compressed frame.
         size_t wrote = 0;
-        if (!asset::DecompressZstdStreamTo(is, static_cast<size_t>(found->stored_size), dst.data(), dst.size(), wrote)) {
+        // The caller may supply a larger span. Even malformed compressed data
+        // must not modify bytes beyond the asset's declared raw size.
+        if (!asset::DecompressZstdStreamTo(is, static_cast<size_t>(found->stored_size),
+                                           dst.data(), static_cast<size_t>(found->raw_size), wrote)) {
             out_err = AssetError::DecompressFailed; return std::nullopt;
         }
         if (wrote != static_cast<size_t>(found->raw_size)) {
