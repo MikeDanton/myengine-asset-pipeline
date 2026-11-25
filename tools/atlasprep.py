@@ -51,7 +51,8 @@ def load_layout(layout_path):
         layout = json.loads(layout_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise AtlasError(f"cannot read atlas layout: {exc}") from exc
-    if not isinstance(layout, dict) or layout.get("version") != 1:
+    if (not isinstance(layout, dict) or type(layout.get("version")) is not int
+            or layout["version"] != 1):
         raise AtlasError("layout version must be 1")
     keys = [layout.get("atlas_key"), layout.get("metadata_key")]
     for key in keys:
