@@ -1,3 +1,4 @@
+import os
 import pathlib
 import subprocess
 import sys
@@ -65,6 +66,29 @@ class AssetCompilerTests(unittest.TestCase):
         original = self.output.read_bytes()
         self.run_assetc(str(self.output), ok=False)
         self.assertEqual(original, self.output.read_bytes())
+
+    def test_cache_hard_link_to_source_is_rejected(self):
+        self.run_assetc()
+        original_pack = self.output.read_bytes()
+        source = self.assets / 'a.txt'
+        original_source = source.read_bytes()
+        cache = self.root / 'aliased.cache'
+        os.link(source, cache)
+        result = self.run_assetc(str(cache), ok=False)
+        self.assertIn('Cache aliases a source asset', result.stderr)
+        self.assertEqual(original_pack, self.output.read_bytes())
+        self.assertEqual(original_source, source.read_bytes())
+        self.assertEqual(original_source, cache.read_bytes())
+
+    def test_cache_hard_link_to_output_is_rejected(self):
+        self.run_assetc()
+        original = self.output.read_bytes()
+        cache = self.root / 'aliased.cache'
+        os.link(self.output, cache)
+        result = self.run_assetc(str(cache), ok=False)
+        self.assertIn('must be different files', result.stderr)
+        self.assertEqual(original, self.output.read_bytes())
+        self.assertEqual(original, cache.read_bytes())
 
     def test_quarantine_marker_refuses_pack_even_on_cache_hit(self):
         self.run_assetc()

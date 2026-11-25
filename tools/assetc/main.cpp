@@ -176,7 +176,12 @@ int main(int argc, char** argv) try {
     input = fs::weakly_canonical(input);
     outPak = fs::weakly_canonical(outPak);
     cacheFile = fs::weakly_canonical(cacheFile);
-    if (outPak == cacheFile) {
+    // Canonical paths resolve symlinks, but distinct hard-link names can
+    // still identify the same inode. Check before opening/truncating the cache.
+    const bool sharedCacheInode = fs::is_regular_file(cacheFile) &&
+        fs::hard_link_count(cacheFile) > 1;
+    if (outPak == cacheFile ||
+        (sharedCacheInode && fs::exists(outPak) && fs::equivalent(outPak, cacheFile))) {
         std::cerr << "Output pack and cache must be different files\n";
         return 2;
     }
@@ -201,6 +206,10 @@ int main(int argc, char** argv) try {
         }
         const auto resolved = fs::weakly_canonical(filePath);
         if (resolved == outPak || resolved == cacheFile) continue;
+        if (sharedCacheInode && fs::equivalent(resolved, cacheFile)) {
+            std::cerr << "Cache aliases a source asset: " << filePath << '\n';
+            return 3;
+        }
         std::string key = canonical_key_from_path(input, filePath);
         std::vector<uint8_t> buf;
         if (!read_file_bytes(filePath, buf)) {
