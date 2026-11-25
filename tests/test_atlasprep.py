@@ -48,6 +48,16 @@ class AtlasPrepTests(unittest.TestCase):
         self.assertEqual(result.returncode == 0, ok, result.stderr or result.stdout)
         return result
 
+    def test_layout_version_requires_exact_integer(self):
+        for invalid_version in (True, 1.0, "1"):
+            with self.subTest(version=invalid_version):
+                self.layout["version"] = invalid_version
+                self.run_tool(ok=False)
+                self.assertFalse(self.out.exists())
+        self.layout["version"] = 1
+        self.run_tool()
+        self.assertTrue((self.out / "atlases/world.png").is_file())
+
     def test_two_frames_atlas_metadata_and_extrusion(self):
         self.run_tool()
         meta = json.loads((self.out / "atlases/world.json").read_text())
